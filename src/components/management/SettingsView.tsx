@@ -1,11 +1,14 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { 
   Building, Landmark, FileText, Users, Check, AlertCircle, 
   Upload, Image as ImageIcon, Eye, Printer, RotateCcw, 
-  Cloud, RefreshCw, Database, Sparkles, MapPin, Phone
+  Cloud, RefreshCw, Database, Sparkles, MapPin, Phone,
+  Trash2, Power, PowerOff, Edit3, Search, X, CheckCircle2,
+  AlertTriangle, Shield, Award, UserCheck
 } from 'lucide-react';
 import { StoreProfile, Financier, ContractTemplate, Salesperson, LetterheadConfig } from '../../types';
 import { PageHeader, UnderlineTabs } from '../common/DesignSystem';
+import { BrandLogo } from '../common/BrandLogo';
 import { compressImageFile } from '../../utils/imageCompressor';
 import { maskCPF, maskCNPJ, maskPhone, maskCEP } from '../../utils/formatters';
 import { AVAILABLE_MERGE_TAGS, renderTemplate } from '../../utils/templateEngine';
@@ -21,6 +24,12 @@ interface SettingsViewProps {
   onSaveTemplate: (template: ContractTemplate) => void;
   onAddFinancier: (financier: Financier) => void;
   onAddSalesperson: (salesperson: Salesperson) => void;
+  onToggleFinancier?: (id: string) => void;
+  onDeleteFinancier?: (id: string) => void;
+  onUpdateFinancier?: (financier: Financier) => void;
+  onToggleSalesperson?: (id: string) => void;
+  onDeleteSalesperson?: (id: string) => void;
+  onUpdateSalesperson?: (salesperson: Salesperson) => void;
 }
 
 export const SettingsView: React.FC<SettingsViewProps> = ({
@@ -31,7 +40,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onSaveStore,
   onSaveTemplate,
   onAddFinancier,
-  onAddSalesperson
+  onAddSalesperson,
+  onToggleFinancier,
+  onDeleteFinancier,
+  onUpdateFinancier,
+  onToggleSalesperson,
+  onDeleteSalesperson,
+  onUpdateSalesperson
 }) => {
   const [activeTab, setActiveTab] = useState<'store' | 'letterhead_contracts' | 'financiers' | 'salespeople' | 'firebase'>('store');
 
@@ -73,11 +88,21 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [newFinNome, setNewFinNome] = useState('');
   const [newFinTaxa, setNewFinTaxa] = useState<number>(1.49);
   const [newFinTelefone, setNewFinTelefone] = useState('(83) 9');
+  const [newFinContato, setNewFinContato] = useState('');
+  const [financierFilter, setFinancierFilter] = useState<'todas' | 'ativas' | 'desativadas'>('todas');
+  const [financierSearch, setFinancierSearch] = useState('');
+  const [editingFinancier, setEditingFinancier] = useState<Financier | null>(null);
+  const [deleteFinancierConfirm, setDeleteFinancierConfirm] = useState<Financier | null>(null);
 
-  // Formulário de Novos Vendedores
+  // Formulário de Novos Vendedores / Membros da Equipe
   const [newSellerNome, setNewSellerNome] = useState('');
   const [newSellerEmail, setNewSellerEmail] = useState('');
   const [newSellerTelefone, setNewSellerTelefone] = useState('(83) 9');
+  const [newSellerMeta, setNewSellerMeta] = useState<number>(5);
+  const [salespersonFilter, setSalespersonFilter] = useState<'todos' | 'ativos' | 'desativados'>('todos');
+  const [salespersonSearch, setSalespersonSearch] = useState('');
+  const [editingSalesperson, setEditingSalesperson] = useState<Salesperson | null>(null);
+  const [deleteSalespersonConfirm, setDeleteSalespersonConfirm] = useState<Salesperson | null>(null);
 
   // Sincronização Firebase
   const [syncStatus, setSyncStatus] = useState<string | null>(null);
@@ -89,6 +114,20 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     onSaveStore(storeForm);
     setStoreSavedNotice(true);
     setTimeout(() => setStoreSavedNotice(false), 3000);
+  };
+
+  const handleRemoveLogo = () => {
+    if (window.confirm('Deseja remover o logotipo personalizado da loja e voltar ao emblema institucional padrão?')) {
+      const updated = {
+        ...storeForm,
+        logoUrl: '',
+        papelTimbrado: storeForm.papelTimbrado ? { ...storeForm.papelTimbrado, logoUrl: '' } : undefined
+      };
+      setStoreForm(updated);
+      onSaveStore(updated);
+      setStoreSavedNotice(true);
+      setTimeout(() => setStoreSavedNotice(false), 3000);
+    }
   };
 
   const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -169,15 +208,47 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       nome: newFinNome,
       taxaMedia: Number(newFinTaxa),
       telefone: maskPhone(newFinTelefone),
-      ativa: true
+      contato: newFinContato || undefined,
+      contatoGerente: newFinContato || undefined,
+      ativa: true,
+      ativo: true
     };
     onAddFinancier(fin);
     setNewFinNome('');
     setNewFinTaxa(1.49);
     setNewFinTelefone('(83) 9');
+    setNewFinContato('');
   };
 
-  // Handlers de Vendedores
+  const handleToggleFinancierClick = (id: string) => {
+    if (onToggleFinancier) {
+      onToggleFinancier(id);
+    } else {
+      storageService.toggleFinancierStatus(id);
+    }
+  };
+
+  const handleDeleteFinancierExecute = (id: string) => {
+    if (onDeleteFinancier) {
+      onDeleteFinancier(id);
+    } else {
+      storageService.deleteFinancier(id);
+    }
+    setDeleteFinancierConfirm(null);
+  };
+
+  const handleSaveEditFinancierSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingFinancier) return;
+    if (onUpdateFinancier) {
+      onUpdateFinancier(editingFinancier);
+    } else {
+      storageService.saveFinancier(editingFinancier);
+    }
+    setEditingFinancier(null);
+  };
+
+  // Handlers de Vendedores / Membros da Equipe
   const handleAddSellerSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newSellerNome) return;
@@ -186,13 +257,86 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       nome: newSellerNome,
       email: newSellerEmail || `${newSellerNome.toLowerCase().replace(/\s+/g, '')}@vaveiculos.com.br`,
       telefone: maskPhone(newSellerTelefone),
-      ativo: true
+      metaMensal: Number(newSellerMeta) || 5,
+      ativo: true,
+      dataContratacao: new Date().toISOString()
     };
     onAddSalesperson(seller);
     setNewSellerNome('');
     setNewSellerEmail('');
     setNewSellerTelefone('(83) 9');
+    setNewSellerMeta(5);
   };
+
+  const handleToggleSalespersonClick = (id: string) => {
+    if (onToggleSalesperson) {
+      onToggleSalesperson(id);
+    } else {
+      storageService.toggleSalespersonStatus(id);
+    }
+  };
+
+  const handleDeleteSalespersonExecute = (id: string) => {
+    if (onDeleteSalesperson) {
+      onDeleteSalesperson(id);
+    } else {
+      storageService.deleteSalesperson(id);
+    }
+    setDeleteSalespersonConfirm(null);
+  };
+
+  const handleSaveEditSalespersonSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingSalesperson) return;
+    if (onUpdateSalesperson) {
+      onUpdateSalesperson(editingSalesperson);
+    } else {
+      storageService.saveSalesperson(editingSalesperson);
+    }
+    setEditingSalesperson(null);
+  };
+
+  // Filtragem de Financeiras
+  const filteredFinanciers = useMemo(() => {
+    return financiers.filter(f => {
+      const isAtiva = f.ativa !== false && f.ativo !== false;
+      if (financierFilter === 'ativas' && !isAtiva) return false;
+      if (financierFilter === 'desativadas' && isAtiva) return false;
+      if (financierSearch.trim()) {
+        const q = financierSearch.toLowerCase();
+        const matchesName = f.nome.toLowerCase().includes(q);
+        const matchesPhone = (f.telefone || '').toLowerCase().includes(q);
+        const matchesContact = (f.contato || f.contatoGerente || '').toLowerCase().includes(q);
+        return matchesName || matchesPhone || matchesContact;
+      }
+      return true;
+    });
+  }, [financiers, financierFilter, financierSearch]);
+
+  const activeFinanciersCount = useMemo(() => {
+    return financiers.filter(f => f.ativa !== false && f.ativo !== false).length;
+  }, [financiers]);
+
+  // Filtragem de Membros da Equipe
+  const filteredSalespeople = useMemo(() => {
+    return salespeople.filter(s => {
+      const isAtivo = s.ativo !== false;
+      if (salespersonFilter === 'ativos' && !isAtivo) return false;
+      if (salespersonFilter === 'desativados' && isAtivo) return false;
+      if (salespersonSearch.trim()) {
+        const q = salespersonSearch.toLowerCase();
+        const matchesName = s.nome.toLowerCase().includes(q);
+        const matchesEmail = (s.email || '').toLowerCase().includes(q);
+        const matchesPhone = (s.telefone || '').toLowerCase().includes(q);
+        return matchesName || matchesEmail || matchesPhone;
+      }
+      return true;
+    });
+  }, [salespeople, salespersonFilter, salespersonSearch]);
+
+  const activeSalespeopleCount = useMemo(() => {
+    return salespeople.filter(s => s.ativo !== false).length;
+  }, [salespeople]);
 
   const handleSyncFirebase = async () => {
     try {
@@ -328,31 +472,38 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 Logotipo da VA Veículos (Papel Timbrado & Vitrine)
               </span>
               <div className="flex flex-col sm:flex-row items-center gap-5">
-                <div className="w-48 h-20 bg-neutral-900 border border-neutral-800 rounded-xl flex items-center justify-center overflow-hidden p-2">
-                  {storeForm.logoUrl ? (
-                    <img src={storeForm.logoUrl} alt="Logo da Loja" className="max-w-full max-h-full object-contain" />
-                  ) : (
-                    <div className="text-center text-neutral-500 text-[10px]">
-                      <ImageIcon className="w-6 h-6 mx-auto mb-1 opacity-40" />
-                      Sem logo anexado
-                    </div>
-                  )}
+                <div className="w-52 h-20 bg-neutral-900 border border-neutral-800 rounded-xl flex items-center justify-center overflow-hidden p-2">
+                  <BrandLogo store={storeForm} size="lg" />
                 </div>
 
                 <div className="flex-1 space-y-2 text-center sm:text-left">
-                  <label className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-white font-semibold text-xs cursor-pointer transition-colors border border-neutral-700">
-                    <Upload className="w-4 h-4 text-amber-500" />
-                    {isUploadingLogo ? 'Processando e comprimindo...' : 'Enviar Nova Imagem de Logotipo'}
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={handleLogoUpload}
-                      disabled={isUploadingLogo}
-                      className="hidden"
-                    />
-                  </label>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <label className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-white font-semibold text-xs cursor-pointer transition-colors border border-neutral-700">
+                      <Upload className="w-4 h-4 text-amber-500" />
+                      {isUploadingLogo ? 'Processando e comprimindo...' : 'Enviar Nova Imagem de Logotipo'}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleLogoUpload}
+                        disabled={isUploadingLogo}
+                        className="hidden"
+                      />
+                    </label>
+
+                    {storeForm.logoUrl && (
+                      <button
+                        type="button"
+                        onClick={handleRemoveLogo}
+                        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-neutral-900 hover:bg-red-950/40 text-neutral-400 hover:text-red-400 text-xs font-semibold border border-neutral-800 hover:border-red-800/50 transition-colors cursor-pointer"
+                        title="Remover logotipo personalizado e voltar ao emblema padrão"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        Remover Logotipo Personalizado
+                      </button>
+                    )}
+                  </div>
                   <p className="text-[11px] text-neutral-400">
-                    Formatos recomendados: PNG ou JPEG com fundo transparente ou branco. Otimizado automaticamente para o papel timbrado.
+                    O logotipo é aplicado automaticamente no menu lateral, na barra superior de navegação, no cabeçalho e rodapé do catálogo de veículos, e nas impressões de contratos e recibos.
                   </p>
                 </div>
               </div>
@@ -954,17 +1105,23 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       {/* ABA 3: Financeiras & Bancos */}
       {activeTab === 'financiers' && (
         <div className="space-y-6 max-w-4xl">
+          {/* Formulário de Credenciamento */}
           <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 space-y-4">
-            <div className="flex items-center gap-2 pb-2 border-b border-neutral-800">
-              <Landmark className="w-4 h-4 text-amber-500" />
-              <h3 className="text-sm font-bold text-white font-display uppercase tracking-wider">
-                Credenciar Nova Instituição Financeira / Banco Parceiro
-              </h3>
+            <div className="flex items-center justify-between pb-2 border-b border-neutral-800">
+              <div className="flex items-center gap-2">
+                <Landmark className="w-4 h-4 text-amber-500" />
+                <h3 className="text-sm font-bold text-white font-display uppercase tracking-wider">
+                  Credenciar Nova Instituição Financeira / Banco Parceiro
+                </h3>
+              </div>
+              <span className="text-[11px] text-neutral-400">
+                {activeFinanciersCount} ativas de {financiers.length} cadastradas
+              </span>
             </div>
 
-            <form onSubmit={handleAddFinancierSubmit} className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+            <form onSubmit={handleAddFinancierSubmit} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <div>
-                <label className={formStyles.label}>Nome do Banco *</label>
+                <label className={formStyles.label}>Nome do Banco / Financeira *</label>
                 <input
                   type="text"
                   required
@@ -998,53 +1155,201 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 />
               </div>
 
-              <div className="flex items-end">
+              <div>
+                <label className={formStyles.label}>Contato / Gerente</label>
+                <input
+                  type="text"
+                  value={newFinContato}
+                  onChange={(e) => setNewFinContato(e.target.value)}
+                  placeholder="Ex: Mesa de Crédito / Patrícia"
+                  className={formStyles.input}
+                />
+              </div>
+
+              <div className="sm:col-span-2 lg:col-span-4 flex justify-end pt-2">
                 <button
                   type="submit"
-                  className="w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-neutral-950 text-xs font-bold transition-colors cursor-pointer"
+                  className="px-6 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-neutral-950 text-xs font-bold transition-colors cursor-pointer flex items-center gap-2 shadow-lg shadow-amber-500/10"
                 >
-                  Adicionar Banco
+                  <Landmark className="w-4 h-4" />
+                  Credenciar Banco / Financeira
                 </button>
               </div>
             </form>
           </div>
 
+          {/* Lista e Controles de Gestão */}
           <div className="bg-neutral-900 border border-neutral-800 rounded-2xl overflow-hidden">
-            <div className="px-6 py-4 border-b border-neutral-800 text-xs font-bold text-neutral-300 uppercase tracking-wider">
-              Bancos Credenciados para Aprovação de Crédito
+            {/* Header com Filtros e Busca */}
+            <div className="p-4 sm:p-5 border-b border-neutral-800 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-neutral-950/50">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setFinancierFilter('todas')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                    financierFilter === 'todas'
+                      ? 'bg-amber-500 text-neutral-950'
+                      : 'text-neutral-400 hover:text-white bg-neutral-900 border border-neutral-800'
+                  }`}
+                >
+                  Todas ({financiers.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFinancierFilter('ativas')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer flex items-center gap-1.5 ${
+                    financierFilter === 'ativas'
+                      ? 'bg-emerald-500 text-neutral-950 font-bold'
+                      : 'text-neutral-400 hover:text-white bg-neutral-900 border border-neutral-800'
+                  }`}
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                  Ativas ({activeFinanciersCount})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFinancierFilter('desativadas')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer flex items-center gap-1.5 ${
+                    financierFilter === 'desativadas'
+                      ? 'bg-red-500/20 text-red-400 border border-red-500/30'
+                      : 'text-neutral-400 hover:text-white bg-neutral-900 border border-neutral-800'
+                  }`}
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
+                  Desativadas ({financiers.length - activeFinanciersCount})
+                </button>
+              </div>
+
+              {/* Busca Rápida */}
+              <div className="relative w-full sm:w-64">
+                <Search className="w-3.5 h-3.5 text-neutral-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={financierSearch}
+                  onChange={(e) => setFinancierSearch(e.target.value)}
+                  placeholder="Filtrar por nome ou fone..."
+                  className="w-full bg-neutral-900 border border-neutral-800 rounded-lg pl-8 pr-3 py-1.5 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-amber-500"
+                />
+              </div>
             </div>
-            <div className="divide-y divide-neutral-800">
-              {financiers.map((f) => (
-                <div key={f.id} className="p-4 flex items-center justify-between hover:bg-neutral-800/40 transition-colors">
-                  <div>
-                    <div className="font-semibold text-sm text-white">{f.nome}</div>
-                    <div className="text-xs text-neutral-400">
-                      Contato: {f.contato || f.contatoGerente || 'Mesa de Crédito'} · Tel: {f.telefone}
+
+            {/* Listagem */}
+            {filteredFinanciers.length === 0 ? (
+              <div className="p-8 text-center text-neutral-500 text-xs">
+                Nenhuma instituição financeira encontrada com os filtros selecionados.
+              </div>
+            ) : (
+              <div className="divide-y divide-neutral-800">
+                {filteredFinanciers.map((f) => {
+                  const isAtiva = f.ativa !== false && f.ativo !== false;
+                  return (
+                    <div 
+                      key={f.id} 
+                      className={`p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-colors ${
+                        isAtiva ? 'hover:bg-neutral-800/40' : 'bg-neutral-950/40 opacity-70 hover:opacity-100'
+                      }`}
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 border ${
+                          isAtiva 
+                            ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' 
+                            : 'bg-neutral-800 text-neutral-500 border-neutral-700'
+                        }`}>
+                          <Landmark className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-bold text-sm text-white">{f.nome}</span>
+                            {isAtiva ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                                Ativa
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-red-500/10 text-red-400 border border-red-500/20">
+                                <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
+                                Desativada
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-xs text-neutral-400 mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5">
+                            <span>Mesa: <strong className="text-neutral-300">{f.contato || f.contatoGerente || 'Geral'}</strong></span>
+                            {f.telefone && <span>• Tel: <strong className="text-neutral-300">{f.telefone}</strong></span>}
+                            <span>• Taxa Média: <strong className="text-emerald-400 font-num">{f.taxaMedia || 1.49}% a.m.</strong></span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Botões de Ação: Ativar/Desativar, Editar e Apagar */}
+                      <div className="flex items-center gap-2 self-end sm:self-center">
+                        <button
+                          type="button"
+                          onClick={() => handleToggleFinancierClick(f.id)}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer border ${
+                            isAtiva
+                              ? 'bg-neutral-800 hover:bg-amber-900/40 text-amber-300 hover:text-amber-200 border-neutral-700 hover:border-amber-700/50'
+                              : 'bg-emerald-950/40 hover:bg-emerald-900/60 text-emerald-300 border-emerald-800/50'
+                          }`}
+                          title={isAtiva ? 'Desativar financeira' : 'Ativar financeira'}
+                        >
+                          {isAtiva ? (
+                            <>
+                              <PowerOff className="w-3.5 h-3.5" />
+                              <span>Desativar</span>
+                            </>
+                          ) : (
+                            <>
+                              <Power className="w-3.5 h-3.5" />
+                              <span>Ativar</span>
+                            </>
+                          )}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setEditingFinancier(f)}
+                          className="p-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white border border-neutral-700 transition-colors cursor-pointer"
+                          title="Editar informações da financeira"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setDeleteFinancierConfirm(f)}
+                          className="p-1.5 rounded-lg bg-neutral-800 hover:bg-red-950/60 text-neutral-400 hover:text-red-400 border border-neutral-700 hover:border-red-800/60 transition-colors cursor-pointer"
+                          title="Apagar instituição financeira"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                  <div className="text-right">
-                    <span className="text-xs text-neutral-500 uppercase block">Taxa Estimada</span>
-                    <span className="text-sm font-bold text-emerald-400 font-num tabular-nums">{f.taxaMedia || 1.49}% a.m.</span>
-                  </div>
-                </div>
-              ))}
-            </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
       )}
 
-      {/* ABA 4: Equipe de Vendedores */}
+      {/* ABA 4: Equipe de Vendedores & Consultores */}
       {activeTab === 'salespeople' && (
         <div className="space-y-6 max-w-4xl">
+          {/* Formulário de Cadastro de Vendedor */}
           <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 space-y-4">
-            <div className="flex items-center gap-2 pb-2 border-b border-neutral-800">
-              <Users className="w-4 h-4 text-amber-500" />
-              <h3 className="text-sm font-bold text-white font-display uppercase tracking-wider">
-                Cadastrar Novo Vendedor / Consultor
-              </h3>
+            <div className="flex items-center justify-between pb-2 border-b border-neutral-800">
+              <div className="flex items-center gap-2">
+                <Users className="w-4 h-4 text-amber-500" />
+                <h3 className="text-sm font-bold text-white font-display uppercase tracking-wider">
+                  Cadastrar Novo Consultor / Vendedor
+                </h3>
+              </div>
+              <span className="text-[11px] text-neutral-400">
+                {activeSalespeopleCount} ativos de {salespeople.length} cadastrados
+              </span>
             </div>
 
-            <form onSubmit={handleAddSellerSubmit} className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+            <form onSubmit={handleAddSellerSubmit} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <div>
                 <label className={formStyles.label}>Nome Completo *</label>
                 <input
@@ -1058,7 +1363,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               </div>
 
               <div>
-                <label className={formStyles.label}>E-mail</label>
+                <label className={formStyles.label}>E-mail da Loja</label>
                 <input
                   type="email"
                   value={newSellerEmail}
@@ -1079,37 +1384,464 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 />
               </div>
 
-              <div className="flex items-end">
+              <div>
+                <label className={formStyles.label}>Meta Mensal (Veículos)</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={50}
+                  value={newSellerMeta}
+                  onChange={(e) => setNewSellerMeta(Number(e.target.value))}
+                  placeholder="5"
+                  className={formStyles.input}
+                />
+              </div>
+
+              <div className="sm:col-span-2 lg:col-span-4 flex justify-end pt-2">
                 <button
                   type="submit"
-                  className="w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-neutral-950 text-xs font-bold transition-colors cursor-pointer"
+                  className="px-6 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-neutral-950 text-xs font-bold transition-colors cursor-pointer flex items-center gap-2 shadow-lg shadow-amber-500/10"
                 >
-                  Salvar Consultor
+                  <Users className="w-4 h-4" />
+                  Salvar Consultor de Vendas
                 </button>
               </div>
             </form>
           </div>
 
+          {/* Lista e Controles de Gestão de Equipe */}
           <div className="bg-neutral-900 border border-neutral-800 rounded-2xl overflow-hidden">
-            <div className="px-6 py-4 border-b border-neutral-800 text-xs font-bold text-neutral-300 uppercase tracking-wider">
-              Consultores de Vendas Ativos
+            {/* Header com Filtros e Busca */}
+            <div className="p-4 sm:p-5 border-b border-neutral-800 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-neutral-950/50">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSalespersonFilter('todos')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                    salespersonFilter === 'todos'
+                      ? 'bg-amber-500 text-neutral-950'
+                      : 'text-neutral-400 hover:text-white bg-neutral-900 border border-neutral-800'
+                  }`}
+                >
+                  Todos ({salespeople.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSalespersonFilter('ativos')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer flex items-center gap-1.5 ${
+                    salespersonFilter === 'ativos'
+                      ? 'bg-emerald-500 text-neutral-950 font-bold'
+                      : 'text-neutral-400 hover:text-white bg-neutral-900 border border-neutral-800'
+                  }`}
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                  Ativos ({activeSalespeopleCount})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSalespersonFilter('desativados')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer flex items-center gap-1.5 ${
+                    salespersonFilter === 'desativados'
+                      ? 'bg-red-500/20 text-red-400 border border-red-500/30'
+                      : 'text-neutral-400 hover:text-white bg-neutral-900 border border-neutral-800'
+                  }`}
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
+                  Desativados ({salespeople.length - activeSalespeopleCount})
+                </button>
+              </div>
+
+              {/* Busca Rápida */}
+              <div className="relative w-full sm:w-64">
+                <Search className="w-3.5 h-3.5 text-neutral-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={salespersonSearch}
+                  onChange={(e) => setSalespersonSearch(e.target.value)}
+                  placeholder="Filtrar por nome, e-mail ou fone..."
+                  className="w-full bg-neutral-900 border border-neutral-800 rounded-lg pl-8 pr-3 py-1.5 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-amber-500"
+                />
+              </div>
             </div>
-            <div className="divide-y divide-neutral-800">
-              {salespeople.map((s) => (
-                <div key={s.id} className="p-4 flex items-center justify-between hover:bg-neutral-800/40 transition-colors">
-                  <div>
-                    <div className="font-semibold text-sm text-white">{s.nome}</div>
-                    <div className="text-xs text-neutral-400">
-                      {s.email} · {s.telefone}
+
+            {/* Listagem */}
+            {filteredSalespeople.length === 0 ? (
+              <div className="p-8 text-center text-neutral-500 text-xs">
+                Nenhum membro da equipe encontrado com os filtros selecionados.
+              </div>
+            ) : (
+              <div className="divide-y divide-neutral-800">
+                {filteredSalespeople.map((s) => {
+                  const isAtivo = s.ativo !== false;
+                  return (
+                    <div 
+                      key={s.id} 
+                      className={`p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-colors ${
+                        isAtivo ? 'hover:bg-neutral-800/40' : 'bg-neutral-950/40 opacity-70 hover:opacity-100'
+                      }`}
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 border font-bold text-xs ${
+                          isAtivo 
+                            ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' 
+                            : 'bg-neutral-800 text-neutral-500 border-neutral-700'
+                        }`}>
+                          {s.nome.slice(0, 2).toUpperCase()}
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-bold text-sm text-white">{s.nome}</span>
+                            {isAtivo ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                                Ativo na Loja
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-red-500/10 text-red-400 border border-red-500/20">
+                                <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
+                                Desativado
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-xs text-neutral-400 mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5">
+                            <span>E-mail: <strong className="text-neutral-300">{s.email}</strong></span>
+                            {s.telefone && <span>• Fone: <strong className="text-neutral-300">{s.telefone}</strong></span>}
+                            <span>• Meta: <strong className="text-amber-400 font-num">{s.metaMensal || 5} veículos/mês</strong></span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Botões de Ação: Ativar/Desativar, Editar e Apagar */}
+                      <div className="flex items-center gap-2 self-end sm:self-center">
+                        <button
+                          type="button"
+                          onClick={() => handleToggleSalespersonClick(s.id)}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer border ${
+                            isAtivo
+                              ? 'bg-neutral-800 hover:bg-amber-900/40 text-amber-300 hover:text-amber-200 border-neutral-700 hover:border-amber-700/50'
+                              : 'bg-emerald-950/40 hover:bg-emerald-900/60 text-emerald-300 border-emerald-800/50'
+                          }`}
+                          title={isAtivo ? 'Desativar vendedor' : 'Ativar vendedor'}
+                        >
+                          {isAtivo ? (
+                            <>
+                              <PowerOff className="w-3.5 h-3.5" />
+                              <span>Desativar</span>
+                            </>
+                          ) : (
+                            <>
+                              <Power className="w-3.5 h-3.5" />
+                              <span>Ativar</span>
+                            </>
+                          )}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setEditingSalesperson(s)}
+                          className="p-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white border border-neutral-700 transition-colors cursor-pointer"
+                          title="Editar dados do vendedor"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setDeleteSalespersonConfirm(s)}
+                          className="p-1.5 rounded-lg bg-neutral-800 hover:bg-red-950/60 text-neutral-400 hover:text-red-400 border border-neutral-700 hover:border-red-800/60 transition-colors cursor-pointer"
+                          title="Apagar membro da equipe"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                      Ativo na Loja
-                    </span>
-                  </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 1: Editar Instituição Financeira */}
+      {editingFinancier && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-neutral-800">
+              <div className="flex items-center gap-2">
+                <Landmark className="w-4 h-4 text-amber-500" />
+                <h4 className="text-sm font-bold text-white uppercase tracking-wider font-display">
+                  Editar Instituição Financeira
+                </h4>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingFinancier(null)}
+                className="text-neutral-400 hover:text-white p-1 rounded-md"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEditFinancierSubmit} className="space-y-4">
+              <div>
+                <label className={formStyles.label}>Nome do Banco *</label>
+                <input
+                  type="text"
+                  required
+                  value={editingFinancier.nome}
+                  onChange={(e) => setEditingFinancier({ ...editingFinancier, nome: e.target.value })}
+                  className={formStyles.input}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className={formStyles.label}>Taxa Média a.m. (%)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    required
+                    value={editingFinancier.taxaMedia || 1.49}
+                    onChange={(e) => setEditingFinancier({ ...editingFinancier, taxaMedia: Number(e.target.value) })}
+                    className={formStyles.input}
+                  />
                 </div>
-              ))}
+                <div>
+                  <label className={formStyles.label}>Telefone</label>
+                  <input
+                    type="text"
+                    value={editingFinancier.telefone || ''}
+                    onChange={(e) => setEditingFinancier({ ...editingFinancier, telefone: maskPhone(e.target.value) })}
+                    className={formStyles.input}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className={formStyles.label}>Contato do Gerente / Mesa</label>
+                <input
+                  type="text"
+                  value={editingFinancier.contato || editingFinancier.contatoGerente || ''}
+                  onChange={(e) => setEditingFinancier({ 
+                    ...editingFinancier, 
+                    contato: e.target.value, 
+                    contatoGerente: e.target.value 
+                  })}
+                  className={formStyles.input}
+                />
+              </div>
+
+              <div className="flex items-center justify-between p-3 rounded-xl bg-neutral-950 border border-neutral-800">
+                <span className="text-xs text-neutral-300 font-medium">Status no Sistema</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const isAtiva = editingFinancier.ativa !== false && editingFinancier.ativo !== false;
+                    setEditingFinancier({
+                      ...editingFinancier,
+                      ativa: !isAtiva,
+                      ativo: !isAtiva
+                    });
+                  }}
+                  className={`px-3 py-1 rounded-lg text-xs font-bold cursor-pointer transition-colors ${
+                    editingFinancier.ativa !== false && editingFinancier.ativo !== false
+                      ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                      : 'bg-red-500/20 text-red-400 border border-red-500/30'
+                  }`}
+                >
+                  {editingFinancier.ativa !== false && editingFinancier.ativo !== false ? 'Ativa' : 'Desativada'}
+                </button>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-neutral-800">
+                <button
+                  type="button"
+                  onClick={() => setEditingFinancier(null)}
+                  className="px-4 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-xs font-semibold"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-neutral-950 text-xs font-bold"
+                >
+                  Salvar Alterações
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 2: Confirmar Exclusão de Financeira */}
+      {deleteFinancierConfirm && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-neutral-900 border border-red-500/30 rounded-2xl p-6 max-w-sm w-full shadow-2xl space-y-4 text-center">
+            <div className="w-12 h-12 rounded-full bg-red-500/10 border border-red-500/20 text-red-400 flex items-center justify-center mx-auto">
+              <AlertTriangle className="w-6 h-6" />
+            </div>
+
+            <div>
+              <h4 className="text-base font-bold text-white">Apagar Instituição Financeira?</h4>
+              <p className="text-xs text-neutral-400 mt-2 leading-relaxed">
+                Tem certeza que deseja apagar <strong className="text-white">"{deleteFinancierConfirm.nome}"</strong>? Esta instituição será removida do rol de parceiros da VA Veículos.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setDeleteFinancierConfirm(null)}
+                className="px-4 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-xs font-semibold cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => handleDeleteFinancierExecute(deleteFinancierConfirm.id)}
+                className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-bold cursor-pointer transition-colors shadow-lg shadow-red-600/20"
+              >
+                Sim, Apagar Financeira
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 3: Editar Membro da Equipe / Vendedor */}
+      {editingSalesperson && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-neutral-800">
+              <div className="flex items-center gap-2">
+                <Users className="w-4 h-4 text-amber-500" />
+                <h4 className="text-sm font-bold text-white uppercase tracking-wider font-display">
+                  Editar Consultor de Vendas
+                </h4>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingSalesperson(null)}
+                className="text-neutral-400 hover:text-white p-1 rounded-md"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEditSalespersonSubmit} className="space-y-4">
+              <div>
+                <label className={formStyles.label}>Nome Completo *</label>
+                <input
+                  type="text"
+                  required
+                  value={editingSalesperson.nome}
+                  onChange={(e) => setEditingSalesperson({ ...editingSalesperson, nome: e.target.value })}
+                  className={formStyles.input}
+                />
+              </div>
+
+              <div>
+                <label className={formStyles.label}>E-mail</label>
+                <input
+                  type="email"
+                  value={editingSalesperson.email}
+                  onChange={(e) => setEditingSalesperson({ ...editingSalesperson, email: e.target.value })}
+                  className={formStyles.input}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className={formStyles.label}>WhatsApp (DDD 83)</label>
+                  <input
+                    type="text"
+                    value={editingSalesperson.telefone}
+                    onChange={(e) => setEditingSalesperson({ ...editingSalesperson, telefone: maskPhone(e.target.value) })}
+                    className={formStyles.input}
+                  />
+                </div>
+                <div>
+                  <label className={formStyles.label}>Meta (Veículos/mês)</label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={50}
+                    value={editingSalesperson.metaMensal || 5}
+                    onChange={(e) => setEditingSalesperson({ ...editingSalesperson, metaMensal: Number(e.target.value) })}
+                    className={formStyles.input}
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between p-3 rounded-xl bg-neutral-950 border border-neutral-800">
+                <span className="text-xs text-neutral-300 font-medium">Status na Equipe</span>
+                <button
+                  type="button"
+                  onClick={() => setEditingSalesperson({
+                    ...editingSalesperson,
+                    ativo: !(editingSalesperson.ativo !== false)
+                  })}
+                  className={`px-3 py-1 rounded-lg text-xs font-bold cursor-pointer transition-colors ${
+                    editingSalesperson.ativo !== false
+                      ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                      : 'bg-red-500/20 text-red-400 border border-red-500/30'
+                  }`}
+                >
+                  {editingSalesperson.ativo !== false ? 'Ativo na Loja' : 'Desativado'}
+                </button>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-neutral-800">
+                <button
+                  type="button"
+                  onClick={() => setEditingSalesperson(null)}
+                  className="px-4 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-xs font-semibold"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-neutral-950 text-xs font-bold"
+                >
+                  Salvar Alterações
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 4: Confirmar Exclusão de Membro da Equipe */}
+      {deleteSalespersonConfirm && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-neutral-900 border border-red-500/30 rounded-2xl p-6 max-w-sm w-full shadow-2xl space-y-4 text-center">
+            <div className="w-12 h-12 rounded-full bg-red-500/10 border border-red-500/20 text-red-400 flex items-center justify-center mx-auto">
+              <AlertTriangle className="w-6 h-6" />
+            </div>
+
+            <div>
+              <h4 className="text-base font-bold text-white">Apagar Membro da Equipe?</h4>
+              <p className="text-xs text-neutral-400 mt-2 leading-relaxed">
+                Tem certeza que deseja apagar <strong className="text-white">"{deleteSalespersonConfirm.nome}"</strong>? Este consultor deixará de constar na equipe comercial da VA Veículos.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setDeleteSalespersonConfirm(null)}
+                className="px-4 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-xs font-semibold cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => handleDeleteSalespersonExecute(deleteSalespersonConfirm.id)}
+                className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-bold cursor-pointer transition-colors shadow-lg shadow-red-600/20"
+              >
+                Sim, Apagar Membro
+              </button>
             </div>
           </div>
         </div>

@@ -39,5 +39,15 @@ service cloud.firestore {
       allow read, create: if true;
       allow update, delete: if false;
     }
+
+    // Financeiras e bancos credenciados
+    match /financiers/{financierId} {
+      allow read, write: if true;
+    }
+
+    // Membros e vendedores da equipe
+    match /salespeople/{salespersonId} {
+      allow read, write: if true;
+    }
   }
 }

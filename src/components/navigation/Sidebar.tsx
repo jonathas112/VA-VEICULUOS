@@ -5,7 +5,8 @@ import {
   ChevronLeft, ChevronRight, UserCheck, ShieldCheck,
   X, History
 } from 'lucide-react';
-import { UserRole, Salesperson } from '../../types';
+import { UserRole, Salesperson, StoreProfile } from '../../types';
+import { BrandLogo } from '../common/BrandLogo';
 
 interface SidebarProps {
   isCollapsed: boolean;
@@ -22,6 +23,7 @@ interface SidebarProps {
   setActiveSeller: (seller: Salesperson) => void;
   salespeople: Salesperson[];
   pendingCommissionsCount: number;
+  store?: StoreProfile;
 }
 
 interface NavItem {
@@ -50,7 +52,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   activeSeller,
   setActiveSeller,
   salespeople,
-  pendingCommissionsCount
+  pendingCommissionsCount,
+  store
 }) => {
   const [hoveredTooltip, setHoveredTooltip] = useState<string | null>(null);
 
@@ -120,31 +123,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
       }`}>
         <button
           onClick={() => handleNavClick('dashboard')}
-          className="flex items-center gap-3 text-left focus:outline-none cursor-pointer group"
+          className="flex items-center text-left focus:outline-none cursor-pointer group overflow-hidden"
+          title="Ir para o Painel"
         >
-          {/* Logo with metallic automotive touch requested for institutional header */}
-          <div className="w-9 h-9 rounded-[8px] bg-gradient-to-br from-[#CAC9CA] via-[#71717A] to-[#2D2D32] p-[1px] shadow-sm shrink-0">
-            <div className="w-full h-full bg-[#0D0D0F] rounded-[7px] flex items-center justify-center relative overflow-hidden group-hover:bg-[#17171A] transition-colors">
-              <span className="font-display font-black text-sm tracking-tighter text-[#F5F5F5]">
-                VA
-              </span>
-              <span className="absolute bottom-0 left-0 right-0 h-[2px] bg-[#D4130D]" />
-            </div>
-          </div>
-
-          {!isCollapsed && (
-            <div className="flex flex-col overflow-hidden">
-              <div className="flex items-center gap-1.5">
-                <span className="font-display font-bold text-base tracking-tight text-[#F5F5F5]">
-                  VA VEÍCULOS
-                </span>
-                <span className="w-1.5 h-1.5 rounded-full bg-[#D4130D]" />
-              </div>
-              <span className="text-[10px] text-[#A7A7AB] font-medium tracking-wider uppercase -mt-0.5">
-                Gestão Automotiva
-              </span>
-            </div>
-          )}
+          <BrandLogo store={store} size="md" isCollapsed={isCollapsed} />
         </button>
 
         {!isCollapsed && (

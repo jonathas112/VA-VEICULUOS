@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Sidebar } from './components/navigation/Sidebar';
 import { Topbar } from './components/navigation/Topbar';
 import { GlobalSearchModal } from './components/navigation/GlobalSearchModal';
+import { BrandLogo } from './components/common/BrandLogo';
 
 import { ShowroomView } from './components/showroom/ShowroomView';
 import { DashboardView } from './components/management/DashboardView';
@@ -233,12 +234,7 @@ export default function App() {
           {/* Showroom Top Return Header */}
           <div className="h-14 bg-[#080809] border-b border-[#2D2D32] px-4 sm:px-8 flex items-center justify-between sticky top-0 z-30">
             <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-[6px] bg-[#D4130D] flex items-center justify-center font-display font-extrabold text-white text-xs tracking-wider shadow-sm">
-                VA
-              </div>
-              <span className="font-display font-bold text-sm tracking-wider text-[#F5F5F5]">
-                VA VEÍCULOS <span className="text-xs text-[#A7A7AB] font-normal font-sans ml-1">• Areial - PB • Vitrine Pública</span>
-              </span>
+              <BrandLogo store={store} size="sm" />
             </div>
 
             <button
@@ -275,6 +271,7 @@ export default function App() {
             setActiveSeller={setActiveSeller}
             salespeople={salespeople}
             pendingCommissionsCount={pendingCommissionsCount}
+            store={store}
           />
 
           {/* Main Area with dynamic left margin matching fixed desktop sidebar */}
@@ -293,6 +290,7 @@ export default function App() {
               activeSeller={activeSeller}
               pendingCommissionsCount={pendingCommissionsCount}
               onNavigateToCommissions={() => setManagementTab('commissions')}
+              store={store}
             />
 
             {/* Dynamic Content View */}
@@ -427,7 +425,19 @@ export default function App() {
                     refreshData();
                   }}
                   onAddFinancier={(f) => {
-                    storageService.saveFinancier(f);
+                    storageService.addFinancier(f, activeUserName);
+                    refreshData();
+                  }}
+                  onToggleFinancier={(id) => {
+                    storageService.toggleFinancierStatus(id, activeUserName);
+                    refreshData();
+                  }}
+                  onDeleteFinancier={(id) => {
+                    storageService.deleteFinancier(id, activeUserName);
+                    refreshData();
+                  }}
+                  onUpdateFinancier={(f) => {
+                    storageService.saveFinancier(f, activeUserName);
                     refreshData();
                   }}
                   onSaveTemplate={(t) => {
@@ -435,7 +445,19 @@ export default function App() {
                     refreshData();
                   }}
                   onAddSalesperson={(sp) => {
-                    storageService.saveSalesperson(sp);
+                    storageService.addSalesperson(sp, activeUserName);
+                    refreshData();
+                  }}
+                  onToggleSalesperson={(id) => {
+                    storageService.toggleSalespersonStatus(id, activeUserName);
+                    refreshData();
+                  }}
+                  onDeleteSalesperson={(id) => {
+                    storageService.deleteSalesperson(id, activeUserName);
+                    refreshData();
+                  }}
+                  onUpdateSalesperson={(sp) => {
+                    storageService.saveSalesperson(sp, activeUserName);
                     refreshData();
                   }}
                 />

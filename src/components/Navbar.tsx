@@ -4,7 +4,8 @@ import {
   Users, DollarSign, Settings, Clock, Sparkles, UserCheck, 
   History, ShieldAlert, FileText
 } from 'lucide-react';
-import { UserRole, Salesperson } from '../types';
+import { UserRole, Salesperson, StoreProfile } from '../types';
+import { BrandLogo } from './common/BrandLogo';
 
 interface NavbarProps {
   currentView: 'showroom' | 'management';
@@ -17,6 +18,7 @@ interface NavbarProps {
   setActiveSeller: (seller: Salesperson) => void;
   salespeople: Salesperson[];
   pendingCommissionsCount: number;
+  store?: StoreProfile;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -29,7 +31,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   activeSeller,
   setActiveSeller,
   salespeople,
-  pendingCommissionsCount
+  pendingCommissionsCount,
+  store
 }) => {
   return (
     <header className="sticky top-0 z-40 bg-neutral-900/95 backdrop-blur-md border-b border-neutral-800 text-white">
@@ -41,20 +44,10 @@ export const Navbar: React.FC<NavbarProps> = ({
           <div className="flex items-center gap-3">
             <button 
               onClick={() => setCurrentView('showroom')}
-              className="flex items-center gap-2.5 text-left group focus:outline-none cursor-pointer"
+              className="flex items-center text-left group focus:outline-none cursor-pointer"
               id="brand-logo-btn"
             >
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center shadow-lg shadow-amber-500/20 group-hover:scale-105 transition-transform">
-                <Car className="w-5 h-5 text-neutral-950 stroke-[2.5]" />
-              </div>
-              <div>
-                <span className="text-lg font-bold tracking-tight font-display flex items-center gap-1.5">
-                  VA <span className="text-amber-400 font-extrabold">VEÍCULOS</span>
-                </span>
-                <span className="text-[10px] block -mt-1 text-neutral-400 font-medium tracking-wide">
-                  AREIAL - PB · SISTEMA INTEGRADO
-                </span>
-              </div>
+              <BrandLogo store={store} size="md" />
             </button>
           </div>
 

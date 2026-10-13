@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { Vehicle, StoreProfile } from '../../types';
 import { formatCurrency, formatNumber } from '../../utils/formatters';
+import { BrandLogo } from '../common/BrandLogo';
 
 interface VehicleDetailModalProps {
   vehicle: Vehicle | null;
@@ -101,15 +102,18 @@ export const VehicleDetailModal: React.FC<VehicleDetailModalProps> = ({
               )}
             </div>
 
-            {/* Localidade e Atendimento */}
-            <div className="mt-6 p-4 rounded-xl border border-neutral-800 bg-neutral-950/60 text-xs text-neutral-300 flex items-center justify-between">
-              <div>
-                <p className="font-semibold text-white">Disponível para visitação e teste</p>
-                <p className="text-neutral-400 text-[11px] mt-0.5">
-                  {store.nomeFantasia} · {store.endereco}, {store.cidade} - {store.estado}
-                </p>
+            {/* Localidade e Atendimento com Logo Institucional */}
+            <div className="mt-6 p-4 rounded-xl border border-neutral-800 bg-neutral-950/60 text-xs text-neutral-300 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <BrandLogo store={store} size="sm" showText={false} className="shrink-0" />
+                <div>
+                  <p className="font-semibold text-white">Disponível para visitação e teste</p>
+                  <p className="text-neutral-400 text-[11px] mt-0.5">
+                    {store.nomeFantasia} · {store.endereco}, {store.cidade} - {store.estado}
+                  </p>
+                </div>
               </div>
-              <span className="text-[11px] text-amber-400 font-medium px-2 py-1 bg-amber-500/10 rounded border border-amber-500/20">
+              <span className="text-[11px] text-amber-400 font-medium px-2 py-1 bg-amber-500/10 rounded border border-amber-500/20 shrink-0">
                 Pátio {store.cidade}
               </span>
             </div>

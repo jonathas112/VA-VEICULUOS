@@ -7,6 +7,7 @@ import {
 import { Vehicle, StoreProfile, VehicleType } from '../../types';
 import { formatCurrency, formatNumber } from '../../utils/formatters';
 import { VehicleDetailModal } from './VehicleDetailModal';
+import { BrandLogo } from '../common/BrandLogo';
 
 interface ShowroomViewProps {
   vehicles: Vehicle[];
@@ -70,6 +71,18 @@ export const ShowroomView: React.FC<ShowroomViewProps> = ({
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-3/4 h-64 bg-[#D4130D]/10 blur-3xl pointer-events-none rounded-full" />
         
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10 text-center">
+          {/* Logo institucional em destaque na vitrine */}
+          <div className="flex justify-center mb-6">
+            <div className="inline-flex items-center p-2 sm:p-2.5 rounded-2xl bg-[#17171A]/90 backdrop-blur-md border border-[#2D2D32] shadow-2xl hover:border-[#D4130D]/40 transition-all">
+              <BrandLogo 
+                store={store} 
+                size="lg" 
+                textClassName="text-base sm:text-xl font-bold"
+                subtextClassName="text-[10px] text-[#A7A7AB]"
+              />
+            </div>
+          </div>
+
           <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#17171A] border border-[#2D2D32] text-[#CAC9CA] text-xs font-semibold uppercase tracking-wider mb-6">
             <Sparkles className="w-3.5 h-3.5 text-[#D4130D]" />
             VA Veículos • {store.cidade} - {store.estado} • Estoque Selecionado
@@ -187,8 +200,11 @@ export const ShowroomView: React.FC<ShowroomViewProps> = ({
         
         {/* Results counter (sem legendas de repasse ou garantia) */}
         <div className="flex items-center justify-between gap-2 mb-6 pb-3 border-b border-neutral-800 text-xs">
-          <div className="text-neutral-400">
-            Exibindo <span className="font-bold text-white tabular-nums">{filteredVehicles.length}</span> veículos disponíveis em estoque na VA Veículos
+          <div className="flex items-center gap-2 text-neutral-400">
+            <BrandLogo store={store} size="sm" showText={false} className="shrink-0" />
+            <span>
+              Exibindo <span className="font-bold text-white tabular-nums">{filteredVehicles.length}</span> veículos disponíveis em estoque na VA Veículos
+            </span>
           </div>
           <div className="text-neutral-500 text-[11px]">
             {store.cidade} - {store.estado}
@@ -314,13 +330,8 @@ export const ShowroomView: React.FC<ShowroomViewProps> = ({
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-8">
             <div>
-              <div className="flex items-center gap-2 mb-3">
-                <span className="font-extrabold text-white text-base tracking-wider font-display">
-                  VA VEÍCULOS
-                </span>
-                <span className="text-[10px] uppercase tracking-wider text-amber-400 font-bold bg-amber-400/10 px-1.5 py-0.5 rounded border border-amber-400/20">
-                  Areial - PB
-                </span>
+              <div className="mb-3">
+                <BrandLogo store={store} size="md" />
               </div>
               <p className="text-neutral-400 text-xs max-w-md leading-relaxed mb-3">
                 Excelência no comércio de veículos seminovos. Transparência, procedência garantida e atendimento personalizado para Areial e todo o estado da Paraíba.

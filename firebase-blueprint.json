@@ -114,6 +114,37 @@
         "descricao": { "type": "string", "maxLength": 300 }
       },
       "required": ["id", "titulo", "conteudo"]
+    },
+    "Financier": {
+      "title": "Financier",
+      "description": "Instituições financeiras credenciadas para financiamento",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "nome": { "type": "string", "maxLength": 150 },
+        "contatoGerente": { "type": "string", "maxLength": 100 },
+        "contato": { "type": "string", "maxLength": 100 },
+        "telefone": { "type": "string", "maxLength": 30 },
+        "taxaMedia": { "type": "number" },
+        "ativa": { "type": "boolean" },
+        "ativo": { "type": "boolean" }
+      },
+      "required": ["id", "nome"]
+    },
+    "Salesperson": {
+      "title": "Salesperson",
+      "description": "Membros da equipe de consultores e vendedores da loja",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "nome": { "type": "string", "maxLength": 150 },
+        "email": { "type": "string", "maxLength": 150 },
+        "telefone": { "type": "string", "maxLength": 30 },
+        "metaMensal": { "type": "number" },
+        "ativo": { "type": "boolean" },
+        "dataContratacao": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["id", "nome", "ativo"]
     }
   },
   "firestore": {
@@ -140,6 +171,14 @@
     "/templates/{templateId}": {
       "schema": "ContractTemplate",
       "description": "Modelos visuais de contratos e recibos"
+    },
+    "/financiers/{financierId}": {
+      "schema": "Financier",
+      "description": "Instituições financeiras cadastradas para simulação e aprovação"
+    },
+    "/salespeople/{salespersonId}": {
+      "schema": "Salesperson",
+      "description": "Membros e vendedores da equipe comercial"
     }
   }
 }

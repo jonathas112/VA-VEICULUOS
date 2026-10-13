@@ -278,8 +278,8 @@ export const VehicleSaleModal: React.FC<VehicleSaleModalProps> = ({
                   className="w-full bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 text-xs text-white focus:border-amber-500 focus:outline-none disabled:opacity-75"
                 >
                   {salespeople.map(s => (
-                    <option key={s.id} value={s.id}>
-                      {s.nome}
+                    <option key={s.id} value={s.id} disabled={s.ativo === false}>
+                      {s.nome}{s.ativo === false ? ' (Desativado)' : ''}
                     </option>
                   ))}
                 </select>
@@ -331,11 +331,14 @@ export const VehicleSaleModal: React.FC<VehicleSaleModalProps> = ({
                     onChange={(e) => setFinanciadoraId(e.target.value)}
                     className="w-full bg-neutral-950 border border-neutral-700 rounded-lg px-3 py-2 text-xs text-white focus:border-amber-500 focus:outline-none"
                   >
-                    {financiers.map(f => (
-                      <option key={f.id} value={f.id}>
-                        {f.nome} (Taxa ref: {f.taxaMedia}% a.m.)
-                      </option>
-                    ))}
+                    {financiers.map(f => {
+                      const isAtiva = f.ativa !== false && f.ativo !== false;
+                      return (
+                        <option key={f.id} value={f.id} disabled={!isAtiva}>
+                          {f.nome} (Taxa: {f.taxaMedia || 1.49}% a.m.){!isAtiva ? ' - [Desativada]' : ''}
+                        </option>
+                      );
+                    })}
                   </select>
                 </div>
 

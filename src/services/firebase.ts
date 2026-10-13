@@ -11,7 +11,7 @@ import {
   serverTimestamp 
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
-import { Vehicle, FormerOwner, Sale, StoreProfile, AuditLog, ContractTemplate } from '../types';
+import { Vehicle, FormerOwner, Sale, StoreProfile, AuditLog, ContractTemplate, Financier, Salesperson } from '../types';
 
 export const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
@@ -196,6 +196,74 @@ export const firebaseDb = {
       return snap.docs.map(d => d.data() as AuditLog);
     } catch (e) {
       handleFirestoreError(e, OperationType.LIST, 'audit_logs');
+      return [];
+    }
+  },
+
+  // Financeiras & Bancos credenciados
+  async saveFinancier(financier: Financier): Promise<boolean> {
+    try {
+      await setDoc(doc(db, 'financiers', financier.id), {
+        ...financier,
+        atualizadoEm: new Date().toISOString()
+      }, { merge: true });
+      return true;
+    } catch (e) {
+      handleFirestoreError(e, OperationType.WRITE, `financiers/${financier.id}`);
+      return false;
+    }
+  },
+
+  async deleteFinancier(financierId: string): Promise<boolean> {
+    try {
+      await deleteDoc(doc(db, 'financiers', financierId));
+      return true;
+    } catch (e) {
+      handleFirestoreError(e, OperationType.DELETE, `financiers/${financierId}`);
+      return false;
+    }
+  },
+
+  async getFinanciers(): Promise<Financier[]> {
+    try {
+      const snap = await getDocs(collection(db, 'financiers'));
+      return snap.docs.map(d => d.data() as Financier);
+    } catch (e) {
+      handleFirestoreError(e, OperationType.LIST, 'financiers');
+      return [];
+    }
+  },
+
+  // Equipe de Vendedores / Consultores
+  async saveSalesperson(salesperson: Salesperson): Promise<boolean> {
+    try {
+      await setDoc(doc(db, 'salespeople', salesperson.id), {
+        ...salesperson,
+        atualizadoEm: new Date().toISOString()
+      }, { merge: true });
+      return true;
+    } catch (e) {
+      handleFirestoreError(e, OperationType.WRITE, `salespeople/${salesperson.id}`);
+      return false;
+    }
+  },
+
+  async deleteSalesperson(salespersonId: string): Promise<boolean> {
+    try {
+      await deleteDoc(doc(db, 'salespeople', salespersonId));
+      return true;
+    } catch (e) {
+      handleFirestoreError(e, OperationType.DELETE, `salespeople/${salespersonId}`);
+      return false;
+    }
+  },
+
+  async getSalespeople(): Promise<Salesperson[]> {
+    try {
+      const snap = await getDocs(collection(db, 'salespeople'));
+      return snap.docs.map(d => d.data() as Salesperson);
+    } catch (e) {
+      handleFirestoreError(e, OperationType.LIST, 'salespeople');
       return [];
     }
   }

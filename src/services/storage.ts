@@ -61,10 +61,85 @@ export const storageService = {
   saveFinanciers(financiers: Financier[]): void {
     localStorage.setItem(STORAGE_KEYS.FINANCIERS, JSON.stringify(financiers));
   },
-  addFinancier(financier: Financier): void {
+  addFinancier(financier: Financier, user = 'Gestor Geral'): void {
     const list = this.getFinanciers();
     list.push(financier);
     this.saveFinanciers(list);
+
+    const log = auditLogger.log({
+      acao: 'EDICAO_CONFIGURACOES',
+      categoria: 'financeiro',
+      usuarioNome: user,
+      descricao: `Cadastrou a financeira/banco: "${financier.nome}" (Taxa: ${financier.taxaMedia || 1.49}% a.m.).`,
+      detalhes: { id: financier.id, nome: financier.nome, taxaMedia: financier.taxaMedia }
+    });
+
+    firebaseDb.saveFinancier(financier).catch(err => console.warn('Firestore financier save err:', err));
+    firebaseDb.saveAuditLog(log).catch(() => {});
+  },
+  saveFinancier(financier: Financier, user = 'Gestor Geral'): void {
+    const list = this.getFinanciers();
+    const idx = list.findIndex(f => f.id === financier.id);
+    if (idx >= 0) {
+      list[idx] = { ...list[idx], ...financier };
+    } else {
+      list.push(financier);
+    }
+    this.saveFinanciers(list);
+
+    const log = auditLogger.log({
+      acao: 'EDICAO_CONFIGURACOES',
+      categoria: 'financeiro',
+      usuarioNome: user,
+      descricao: `Atualizou os dados da financeira: "${financier.nome}".`,
+      detalhes: { id: financier.id, nome: financier.nome, status: financier.ativa ?? financier.ativo }
+    });
+
+    firebaseDb.saveFinancier(financier).catch(err => console.warn('Firestore financier save err:', err));
+    firebaseDb.saveAuditLog(log).catch(() => {});
+  },
+  toggleFinancierStatus(id: string, user = 'Gestor Geral'): boolean {
+    const list = this.getFinanciers();
+    const target = list.find(f => f.id === id);
+    if (!target) return false;
+
+    const currentActive = target.ativa !== false && target.ativo !== false;
+    const newActive = !currentActive;
+    target.ativa = newActive;
+    target.ativo = newActive;
+    this.saveFinanciers(list);
+
+    const log = auditLogger.log({
+      acao: 'EDICAO_CONFIGURACOES',
+      categoria: 'financeiro',
+      usuarioNome: user,
+      descricao: `${newActive ? 'Ativou' : 'Desativou'} a instituição financeira: "${target.nome}".`,
+      detalhes: { id: target.id, novoStatus: newActive ? 'ativa' : 'desativada' }
+    });
+
+    firebaseDb.saveFinancier(target).catch(() => {});
+    firebaseDb.saveAuditLog(log).catch(() => {});
+    return true;
+  },
+  deleteFinancier(id: string, user = 'Gestor Geral'): boolean {
+    const list = this.getFinanciers();
+    const target = list.find(f => f.id === id);
+    if (!target) return false;
+
+    const updated = list.filter(f => f.id !== id);
+    this.saveFinanciers(updated);
+
+    const log = auditLogger.log({
+      acao: 'EDICAO_CONFIGURACOES',
+      categoria: 'financeiro',
+      usuarioNome: user,
+      descricao: `Removeu a instituição financeira: "${target.nome}".`,
+      detalhes: { id: target.id, nome: target.nome }
+    });
+
+    firebaseDb.deleteFinancier(id).catch(() => {});
+    firebaseDb.saveAuditLog(log).catch(() => {});
+    return true;
   },
 
   // Salespeople
@@ -79,10 +154,83 @@ export const storageService = {
   saveSalespeople(list: Salesperson[]): void {
     localStorage.setItem(STORAGE_KEYS.SALESPEOPLE, JSON.stringify(list));
   },
-  addSalesperson(salesperson: Salesperson): void {
+  addSalesperson(salesperson: Salesperson, user = 'Gestor Geral'): void {
     const list = this.getSalespeople();
     list.push(salesperson);
     this.saveSalespeople(list);
+
+    const log = auditLogger.log({
+      acao: 'CADASTRO_PESSOA',
+      categoria: 'pessoa',
+      usuarioNome: user,
+      descricao: `Cadastrou o consultor/vendedor: "${salesperson.nome}".`,
+      detalhes: { id: salesperson.id, nome: salesperson.nome, email: salesperson.email }
+    });
+
+    firebaseDb.saveSalesperson(salesperson).catch(err => console.warn('Firestore salesperson save err:', err));
+    firebaseDb.saveAuditLog(log).catch(() => {});
+  },
+  saveSalesperson(salesperson: Salesperson, user = 'Gestor Geral'): void {
+    const list = this.getSalespeople();
+    const idx = list.findIndex(s => s.id === salesperson.id);
+    if (idx >= 0) {
+      list[idx] = { ...list[idx], ...salesperson };
+    } else {
+      list.push(salesperson);
+    }
+    this.saveSalespeople(list);
+
+    const log = auditLogger.log({
+      acao: 'EDICAO_PESSOA',
+      categoria: 'pessoa',
+      usuarioNome: user,
+      descricao: `Atualizou os dados do membro da equipe: "${salesperson.nome}".`,
+      detalhes: { id: salesperson.id, nome: salesperson.nome, ativo: salesperson.ativo }
+    });
+
+    firebaseDb.saveSalesperson(salesperson).catch(err => console.warn('Firestore salesperson save err:', err));
+    firebaseDb.saveAuditLog(log).catch(() => {});
+  },
+  toggleSalespersonStatus(id: string, user = 'Gestor Geral'): boolean {
+    const list = this.getSalespeople();
+    const target = list.find(s => s.id === id);
+    if (!target) return false;
+
+    const newActive = !(target.ativo !== false);
+    target.ativo = newActive;
+    this.saveSalespeople(list);
+
+    const log = auditLogger.log({
+      acao: 'EDICAO_PESSOA',
+      categoria: 'pessoa',
+      usuarioNome: user,
+      descricao: `${newActive ? 'Ativou' : 'Desativou'} o membro da equipe: "${target.nome}".`,
+      detalhes: { id: target.id, novoStatus: newActive ? 'ativo' : 'desativado' }
+    });
+
+    firebaseDb.saveSalesperson(target).catch(() => {});
+    firebaseDb.saveAuditLog(log).catch(() => {});
+    return true;
+  },
+  deleteSalesperson(id: string, user = 'Gestor Geral'): boolean {
+    const list = this.getSalespeople();
+    const target = list.find(s => s.id === id);
+    if (!target) return false;
+
+    const updated = list.filter(s => s.id !== id);
+    this.saveSalespeople(updated);
+
+    const log = auditLogger.log({
+      acao: 'EDICAO_PESSOA',
+      categoria: 'pessoa',
+      usuarioNome: user,
+      descricao: `Excluiu o membro da equipe: "${target.nome}".`,
+      detalhes: { id: target.id, nome: target.nome }
+    });
+
+    firebaseDb.deleteSalesperson(id).catch(() => {});
+    firebaseDb.saveAuditLog(log).catch(() => {});
+    return true;
   },
 
   // Templates
@@ -371,19 +519,6 @@ export const storageService = {
   assignCommission(saleId: string, commissionAmount: number, managerName: string = 'Gestor Geral'): void {
     this.assignSaleCommission(saleId, commissionAmount, managerName);
   },
-  saveFinancier(financier: Financier): void {
-    const list = this.getFinanciers();
-    const idx = list.findIndex(f => f.id === financier.id);
-    if (idx >= 0) {
-      list[idx] = financier;
-    } else {
-      list.push(financier);
-    }
-    this.saveFinanciers(list);
-  },
-  saveSalesperson(salesperson: Salesperson): void {
-    this.addSalesperson(salesperson);
-  },
   resetToSeed(): void {
     this.resetAll();
   },
@@ -391,11 +526,13 @@ export const storageService = {
   // Sincronização inicial com Firebase Firestore
   async syncFromFirestore(): Promise<{ vehicles: number; owners: number; sales: number }> {
     try {
-      const [remoteVehicles, remoteOwners, remoteSales, remoteStore] = await Promise.all([
+      const [remoteVehicles, remoteOwners, remoteSales, remoteStore, remoteFinanciers, remoteSalespeople] = await Promise.all([
         firebaseDb.getVehicles(),
         firebaseDb.getOwners(),
         firebaseDb.getSales(),
-        firebaseDb.getStoreProfile()
+        firebaseDb.getStoreProfile(),
+        firebaseDb.getFinanciers(),
+        firebaseDb.getSalespeople()
       ]);
 
       if (remoteVehicles.length > 0) {
@@ -409,6 +546,12 @@ export const storageService = {
       }
       if (remoteStore) {
         localStorage.setItem(STORAGE_KEYS.STORE, JSON.stringify(remoteStore));
+      }
+      if (remoteFinanciers.length > 0) {
+        this.saveFinanciers(remoteFinanciers);
+      }
+      if (remoteSalespeople.length > 0) {
+        this.saveSalespeople(remoteSalespeople);
       }
 
       auditLogger.log({

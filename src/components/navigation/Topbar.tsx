@@ -3,7 +3,8 @@ import {
   PanelLeftClose, PanelLeft, Search, Bell, Sparkles, 
   ShieldCheck, UserCheck, ChevronDown, Check, User
 } from 'lucide-react';
-import { UserRole, Salesperson } from '../../types';
+import { UserRole, Salesperson, StoreProfile } from '../../types';
+import { BrandLogo } from '../common/BrandLogo';
 
 interface TopbarProps {
   isSidebarCollapsed: boolean;
@@ -16,6 +17,7 @@ interface TopbarProps {
   activeSeller: Salesperson | null;
   pendingCommissionsCount: number;
   onNavigateToCommissions: () => void;
+  store?: StoreProfile;
 }
 
 export const Topbar: React.FC<TopbarProps> = ({
@@ -28,7 +30,8 @@ export const Topbar: React.FC<TopbarProps> = ({
   setUserRole,
   activeSeller,
   pendingCommissionsCount,
-  onNavigateToCommissions
+  onNavigateToCommissions,
+  store
 }) => {
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
@@ -63,6 +66,16 @@ export const Topbar: React.FC<TopbarProps> = ({
         >
           <PanelLeft className="w-5 h-5" />
         </button>
+
+        {/* Mobile / Collapsed Institutional Logo in Topbar */}
+        <div className="flex md:hidden items-center shrink-0 pr-1 border-r border-[#2D2D32]/60">
+          <BrandLogo store={store} size="sm" showText={false} />
+        </div>
+        {isSidebarCollapsed && (
+          <div className="hidden md:flex items-center shrink-0 pr-2 border-r border-[#2D2D32]/60">
+            <BrandLogo store={store} size="sm" showText={false} />
+          </div>
+        )}
 
         {/* Global Search trigger */}
         <button
