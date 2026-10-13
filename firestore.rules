@@ -1,0 +1,43 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Regra padrão segura
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Configurações da loja e papel timbrado (leitura pública para o showroom, escrita liberada para a loja)
+    match /store_config/{configId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Veículos (vitrine pública lê disponíveis; gerenciamento da loja cria/atualiza/remove)
+    match /vehicles/{vehicleId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Clientes e antigos proprietários
+    match /owners/{ownerId} {
+      allow read, write: if true;
+    }
+
+    // Vendas e contratos
+    match /sales/{saleId} {
+      allow read, write: if true;
+    }
+
+    // Modelos de contratos e recibos
+    match /templates/{templateId} {
+      allow read, write: if true;
+    }
+
+    // Trilha de auditoria e log geral (qualquer ação pode criar logs; não pode ser excluído)
+    match /audit_logs/{logId} {
+      allow read, create: if true;
+      allow update, delete: if false;
+    }
+  }
+}

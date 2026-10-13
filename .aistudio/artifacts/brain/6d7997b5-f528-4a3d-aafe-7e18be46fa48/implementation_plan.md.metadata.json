@@ -1,0 +1,6 @@
+{
+  "summary": "Plano de implementação completo para o sistema VA Veículos, contemplando:\n- Remoção da simulação de financiamento e badges de repasse/garantia na vitrine\n- Padrão Areial-PB, DDD 83, CNPJ e banimento do termo concessionária\n- Integração e persistência Firebase com compressão de até 10 fotos e logo\n- Máscaras padrão Brasil (R$, CPF, CNPJ, CEP, Telefone, Placa, RENAVAM)\n- Editor visual de papel timbrado e contratos com preview em tempo real e tags dinâmicas\n- Novas abas administrativas: Histórico de Veículos (paginado de 10 em 10), Pessoas/Clientes com ficha completa e Log Geral de Auditoria",
+  "updatedAt": "2026-10-13T09:38:11.872431200Z",
+  "requestFeedback": true,
+  "userFacing": true
+}

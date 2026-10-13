@@ -1,0 +1,145 @@
+{
+  "entities": {
+    "StoreProfile": {
+      "title": "StoreProfile",
+      "description": "Dados da loja VA Veículos incluindo endereço em Areial-PB, contato e configuração de papel timbrado",
+      "type": "object",
+      "properties": {
+        "nomeFantasia": { "type": "string", "maxLength": 100 },
+        "razaoSocial": { "type": "string", "maxLength": 150 },
+        "cnpj": { "type": "string", "maxLength": 30 },
+        "telefone": { "type": "string", "maxLength": 30 },
+        "whatsapp": { "type": "string", "maxLength": 30 },
+        "endereco": { "type": "string", "maxLength": 200 },
+        "cidade": { "type": "string", "maxLength": 100 },
+        "estado": { "type": "string", "maxLength": 2 },
+        "cep": { "type": "string", "maxLength": 20 },
+        "chavePix": { "type": "string", "maxLength": 100 },
+        "site": { "type": "string", "maxLength": 150 },
+        "logoUrl": { "type": "string", "maxLength": 500000 }
+      },
+      "required": ["nomeFantasia", "cnpj", "cidade", "estado"]
+    },
+    "Vehicle": {
+      "title": "Vehicle",
+      "description": "Ficha do veículo com ciclo de vida, até 10 fotos, histórico e custos",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "tipo": { "type": "string", "enum": ["carro", "moto"] },
+        "marca": { "type": "string", "maxLength": 100 },
+        "modelo": { "type": "string", "maxLength": 100 },
+        "versao": { "type": "string", "maxLength": 150 },
+        "anoFabricacao": { "type": "number" },
+        "anoModelo": { "type": "number" },
+        "cor": { "type": "string", "maxLength": 50 },
+        "combustivel": { "type": "string", "maxLength": 50 },
+        "cambio": { "type": "string", "maxLength": 50 },
+        "quilometragem": { "type": "number" },
+        "placa": { "type": "string", "maxLength": 20 },
+        "chassi": { "type": "string", "maxLength": 50 },
+        "renavam": { "type": "string", "maxLength": 30 },
+        "categoriaComercial": { "type": "string", "enum": ["venda", "repasse"] },
+        "status": { "type": "string", "enum": ["em_estoque", "vendido", "reservado"] },
+        "antigoDonoId": { "type": "string", "maxLength": 128 },
+        "dataEntrada": { "type": "string", "maxLength": 50 },
+        "cadastradoPor": { "type": "string", "maxLength": 100 },
+        "valorPago": { "type": "number" },
+        "valorAnunciado": { "type": "number" }
+      },
+      "required": ["id", "marca", "modelo", "placa", "status"]
+    },
+    "FormerOwner": {
+      "title": "FormerOwner",
+      "description": "Registro de clientes e antigos proprietários vinculados",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "nome": { "type": "string", "maxLength": 150 },
+        "cpf": { "type": "string", "maxLength": 30 },
+        "rg": { "type": "string", "maxLength": 30 },
+        "telefone": { "type": "string", "maxLength": 30 },
+        "endereco": { "type": "string", "maxLength": 200 },
+        "cidade": { "type": "string", "maxLength": 100 },
+        "estado": { "type": "string", "maxLength": 2 },
+        "cep": { "type": "string", "maxLength": 20 },
+        "observacoes": { "type": "string", "maxLength": 500 }
+      },
+      "required": ["id", "nome", "cpf"]
+    },
+    "Sale": {
+      "title": "Sale",
+      "description": "Registro de venda concluída de veículo",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "veiculoId": { "type": "string", "maxLength": 128 },
+        "dataVenda": { "type": "string", "maxLength": 50 },
+        "clienteNome": { "type": "string", "maxLength": 150 },
+        "clienteCpf": { "type": "string", "maxLength": 30 },
+        "clienteTelefone": { "type": "string", "maxLength": 30 },
+        "clienteEndereco": { "type": "string", "maxLength": 200 },
+        "vendedorId": { "type": "string", "maxLength": 128 },
+        "vendedorNome": { "type": "string", "maxLength": 100 },
+        "valorVenda": { "type": "number" },
+        "formaPagamento": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["id", "veiculoId", "clienteNome", "valorVenda"]
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "Trilha de auditoria e log geral de todas as ações no sistema",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "timestamp": { "type": "string", "maxLength": 50 },
+        "usuarioId": { "type": "string", "maxLength": 128 },
+        "usuarioNome": { "type": "string", "maxLength": 100 },
+        "usuarioPapel": { "type": "string", "maxLength": 50 },
+        "acao": { "type": "string", "maxLength": 50 },
+        "categoria": { "type": "string", "maxLength": 50 },
+        "descricao": { "type": "string", "maxLength": 300 }
+      },
+      "required": ["id", "timestamp", "acao", "descricao"]
+    },
+    "ContractTemplate": {
+      "title": "ContractTemplate",
+      "description": "Modelos de recibos e contratos passíveis de edição visual",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "titulo": { "type": "string", "maxLength": 100 },
+        "tipo": { "type": "string", "maxLength": 50 },
+        "conteudo": { "type": "string", "maxLength": 50000 },
+        "descricao": { "type": "string", "maxLength": 300 }
+      },
+      "required": ["id", "titulo", "conteudo"]
+    }
+  },
+  "firestore": {
+    "/store_config/{configId}": {
+      "schema": "StoreProfile",
+      "description": "Configurações da loja VA Veículos e papel timbrado"
+    },
+    "/vehicles/{vehicleId}": {
+      "schema": "Vehicle",
+      "description": "Veículos em estoque ou vendidos"
+    },
+    "/owners/{ownerId}": {
+      "schema": "FormerOwner",
+      "description": "Clientes e antigos proprietários"
+    },
+    "/sales/{saleId}": {
+      "schema": "Sale",
+      "description": "Histórico de vendas realizadas"
+    },
+    "/audit_logs/{logId}": {
+      "schema": "AuditLog",
+      "description": "Log geral de auditoria e eventos"
+    },
+    "/templates/{templateId}": {
+      "schema": "ContractTemplate",
+      "description": "Modelos visuais de contratos e recibos"
+    }
+  }
+}

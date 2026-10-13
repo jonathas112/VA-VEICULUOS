@@ -1,0 +1,71 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --bg-main: #0D0D0F;
+    --bg-sidebar: #080809;
+    --bg-card: #17171A;
+    --bg-card-elevated: #202024;
+    --border-main: #2D2D32;
+    --border-input: #343439;
+    --red-primary: #D4130D;
+    --red-hover: #E3271F;
+    --red-dark: #980707;
+    --text-white: #F5F5F5;
+    --text-silver: #CAC9CA;
+    --text-secondary: #A7A7AB;
+    --text-disabled: #68686E;
+  }
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background-color: #0D0D0F;
+    color: #F5F5F5;
+  }
+
+  .font-display {
+    font-family: 'Sora', sans-serif;
+  }
+
+  .font-num {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+/* Custom Scrollbar for elegant dark mode */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #0D0D0F;
+}
+::-webkit-scrollbar-thumb {
+  background: #2D2D32;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #343439;
+}
+
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #printable-document, #printable-document * {
+    visibility: visible;
+  }
+  #printable-document {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    margin: 0;
+    padding: 24px;
+    background: white !important;
+    color: black !important;
+  }
+  .no-print {
+    display: none !important;
+  }
+}

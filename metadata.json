@@ -1,0 +1,6 @@
+{
+  "name": "VA Veículos",
+  "description": "Sistema de gestão e showroom automotivo premium da VA Veículos com controle de estoque, vendas, contratos e balanço financeiro.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
