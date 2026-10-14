@@ -245,9 +245,13 @@ export function getMonthName(monthIndex: number): string {
   return months[monthIndex] || '';
 }
 
-// Helper to convert number to Portuguese written words (para contratos e recibos)
 export function numberToWordsPtBr(num: number): string {
+  if (isNaN(num) || num === null || num === undefined) return 'zero reais';
+  if (num < 0) {
+    return 'menos ' + numberToWordsPtBr(Math.abs(num));
+  }
   if (num === 0) return 'zero reais';
+
   const units = ['', 'um', 'dois', 'três', 'quatro', 'cinco', 'seis', 'sete', 'oito', 'nove'];
   const teens = ['dez', 'onze', 'doze', 'treze', 'quatorze', 'quinze', 'dezesseis', 'dezessete', 'dezoito', 'dezenove'];
   const tens = ['', 'dez', 'vinte', 'trinta', 'quarenta', 'cinquenta', 'sessenta', 'setenta', 'oitenta', 'noventa'];
@@ -276,6 +280,11 @@ export function numberToWordsPtBr(num: number): string {
 
   const integerPart = Math.floor(num);
   const cents = Math.round((num - integerPart) * 100);
+
+  // Se for apenas centavos (menos de 1 real)
+  if (integerPart === 0 && cents > 0) {
+    return convertGroup(cents) + (cents === 1 ? ' centavo' : ' centavos');
+  }
 
   const parts: string[] = [];
 

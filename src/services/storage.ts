@@ -311,6 +311,22 @@ export const storageService = {
   },
   addVehicle(vehicle: Vehicle, user = 'Gestor Geral'): void {
     const list = this.getVehicles();
+
+    // Bloqueia duplicidade de placa em estoque ativo
+    const cleanPlate = (vehicle.placa || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    const duplicate = list.find(v => 
+      v.status === 'em_estoque' && 
+      (v.placa || '').toUpperCase().replace(/[^A-Z0-9]/g, '') === cleanPlate
+    );
+    if (duplicate) {
+      const msg = `Já existe um veículo em estoque cadastrado com a placa ${vehicle.placa}.`;
+      console.warn(msg);
+      if (typeof window !== 'undefined' && window.alert) {
+        window.alert(msg);
+      }
+      throw new Error(msg);
+    }
+
     list.unshift(vehicle);
     this.saveVehicles(list);
 
@@ -350,24 +366,36 @@ export const storageService = {
       firebaseDb.saveAuditLog(log).catch(() => {});
     }
   },
-  deleteVehicle(vehicleId: string, user = 'Gestor Geral'): void {
+  deleteVehicle(vehicleId: string, user = 'Gestor Geral'): boolean {
     const list = this.getVehicles();
     const vehicle = list.find(v => v.id === vehicleId);
+    if (!vehicle) return false;
+
+    // Proteção contábil: não exclui veículo com venda vinculada
+    const hasSales = this.getSales().some(s => s.veiculoId === vehicleId);
+    if (hasSales) {
+      const msg = `O veículo ${vehicle.marca} ${vehicle.modelo} (${vehicle.placa}) não pode ser excluído pois possui histórico de venda registrado.`;
+      console.warn(msg);
+      if (typeof window !== 'undefined' && window.alert) {
+        window.alert(msg);
+      }
+      return false;
+    }
+
     const updated = list.filter(v => v.id !== vehicleId);
     this.saveVehicles(updated);
 
-    if (vehicle) {
-      const log = auditLogger.log({
-        acao: 'EXCLUSAO_VEICULO',
-        categoria: 'veiculo',
-        usuarioNome: user,
-        descricao: `Excluiu veículo do estoque: ${vehicle.marca} ${vehicle.modelo} (Placa: ${vehicle.placa}).`,
-        detalhes: { veiculoId: vehicleId, placa: vehicle.placa }
-      });
+    const log = auditLogger.log({
+      acao: 'EXCLUSAO_VEICULO',
+      categoria: 'veiculo',
+      usuarioNome: user,
+      descricao: `Excluiu veículo do estoque: ${vehicle.marca} ${vehicle.modelo} (Placa: ${vehicle.placa}).`,
+      detalhes: { veiculoId: vehicleId, placa: vehicle.placa }
+    });
 
-      firebaseDb.deleteVehicle(vehicleId).catch(err => console.warn('Firestore vehicle delete err:', err));
-      firebaseDb.saveAuditLog(log).catch(() => {});
-    }
+    firebaseDb.deleteVehicle(vehicleId).catch(err => console.warn('Firestore vehicle delete err:', err));
+    firebaseDb.saveAuditLog(log).catch(() => {});
+    return true;
   },
   addVehiclePatioExpense(vehicleId: string, expense: VehicleExpense, user = 'Gestor Geral'): void {
     const list = this.getVehicles();
@@ -403,13 +431,23 @@ export const storageService = {
     localStorage.setItem(STORAGE_KEYS.SALES, JSON.stringify(sales));
   },
   addSale(sale: Sale, user = 'Gestor Geral'): void {
+    // Valida se o veículo já está vendido
+    const vehicles = this.getVehicles();
+    const vehicle = vehicles.find(v => v.id === sale.veiculoId);
+    if (vehicle && vehicle.status === 'vendido') {
+      const msg = `O veículo ${vehicle.marca} ${vehicle.modelo} (${vehicle.placa}) já consta como vendido no sistema.`;
+      console.warn(msg);
+      if (typeof window !== 'undefined' && window.alert) {
+        window.alert(msg);
+      }
+      throw new Error(msg);
+    }
+
     const sales = this.getSales();
     sales.unshift(sale);
     this.saveSales(sales);
 
     // Marca o veículo como vendido
-    const vehicles = this.getVehicles();
-    const vehicle = vehicles.find(v => v.id === sale.veiculoId);
     if (vehicle) {
       vehicle.status = 'vendido';
       vehicle.dataVenda = sale.dataVenda;

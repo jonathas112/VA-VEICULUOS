@@ -34,7 +34,7 @@ export const PendingCommissionsView: React.FC<PendingCommissionsViewProps> = ({
 
   const handleApprove = (saleId: string) => {
     const amount = commissionInputs[saleId] !== undefined ? commissionInputs[saleId] : 1200;
-    if (amount < 0) {
+    if (isNaN(amount) || amount < 0) {
       alert('Informe um valor de comissão válido.');
       return;
     }

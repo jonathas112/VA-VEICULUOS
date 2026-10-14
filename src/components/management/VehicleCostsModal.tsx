@@ -44,7 +44,7 @@ export const VehicleCostsModal: React.FC<VehicleCostsModalProps> = ({
 
   const handleAddExpenseSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!descricao || valor <= 0) {
+    if (!descricao.trim() || isNaN(valor) || valor <= 0) {
       alert('Preencha a descrição e um valor positivo.');
       return;
     }

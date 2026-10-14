@@ -23,6 +23,7 @@ interface VehicleEntryModalProps {
   templates: ContractTemplate[];
   store: StoreProfile;
   onOpenReceipt: (vehicle: Vehicle, owner: FormerOwner) => void;
+  vehicles?: Vehicle[];
 }
 
 export const VehicleEntryModal: React.FC<VehicleEntryModalProps> = ({
@@ -33,7 +34,8 @@ export const VehicleEntryModal: React.FC<VehicleEntryModalProps> = ({
   onSaveVehicle,
   templates,
   store,
-  onOpenReceipt
+  onOpenReceipt,
+  vehicles = []
 }) => {
   // Step 1: Owner selection/creation
   const [selectedOwnerId, setSelectedOwnerId] = useState<string>(owners[0]?.id || '');
@@ -153,6 +155,17 @@ export const VehicleEntryModal: React.FC<VehicleEntryModalProps> = ({
 
     if (!modelo || !placa) {
       alert('Preencha os dados essenciais do veículo (Modelo e Placa).');
+      return;
+    }
+
+    const cleanInputPlate = placa.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    const isDuplicatePlate = (vehicles || []).some(v => 
+      v.status === 'em_estoque' && 
+      v.placa.toUpperCase().replace(/[^A-Z0-9]/g, '') === cleanInputPlate
+    );
+
+    if (isDuplicatePlate) {
+      alert(`Já existe um veículo em estoque cadastrado com a placa ${maskPlate(placa)}. Verifique o cadastro ou atualize o veículo existente.`);
       return;
     }
 

@@ -504,6 +504,7 @@ export default function App() {
           templates={templates}
           store={store}
           onOpenReceipt={handleOpenPurchaseReceipt}
+          vehicles={vehicles}
         />
       )}
 

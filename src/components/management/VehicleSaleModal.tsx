@@ -101,14 +101,30 @@ export const VehicleSaleModal: React.FC<VehicleSaleModalProps> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
+    if (vehicle.status === 'vendido') {
+      alert('Este veículo já consta como vendido no sistema.');
+      return;
+    }
+
     if (!clienteNome || !clienteCpf || !clienteEndereco) {
       alert('Por favor, preencha os dados cadastrais do cliente comprador (Nome, CPF e Endereço).');
       return;
     }
 
-    if (valorVenda <= 0) {
+    if (isNaN(valorVenda) || valorVenda <= 0) {
       alert('Informe um valor de venda válido.');
       return;
+    }
+
+    if (formaPagamento === 'financiamento' || formaPagamento === 'misto') {
+      if (isNaN(valorEntrada) || valorEntrada < 0) {
+        alert('Informe um valor de entrada válido.');
+        return;
+      }
+      if (valorEntrada > valorVenda) {
+        alert('O valor da entrada não pode ser superior ao valor da venda.');
+        return;
+      }
     }
 
     const sellerObj = salespeople.find(s => s.id === vendedorId) || salespeople[0];
