@@ -1,12 +1,15 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   ShieldAlert, Search, Filter, RefreshCw, Trash2, 
   Calendar, User, Clock, Eye, X, CheckCircle, AlertTriangle, 
-  Car, ShoppingCart, DollarSign, FileText, Settings, Database
+  Car, ShoppingCart, DollarSign, FileText, Settings, Database, ShieldCheck
 } from 'lucide-react';
 import { AuditLog, AuditActionType } from '../../types';
 import { auditLogger } from '../../services/auditLogger';
 import { formatDateTime } from '../../utils/formatters';
+import { firebaseDb } from '../../services/firebase';
+import { PaginationControls } from '../common/PaginationControls';
+import { usePaginatedList } from '../../hooks/usePaginatedList';
 
 interface AuditLogViewProps {
   logs?: AuditLog[];
@@ -19,17 +22,35 @@ export const AuditLogView: React.FC<AuditLogViewProps> = () => {
   const [selectedCategory, setSelectedCategory] = useState<string>('todas');
   const [selectedPeriod, setSelectedPeriod] = useState<'todos' | 'hoje' | '7dias'>('todos');
   const [selectedLogForDetails, setSelectedLogForDetails] = useState<AuditLog | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
-  const handleRefresh = () => {
-    setLogsList(auditLogger.getLogs());
-  };
-
-  const handleClear = () => {
-    if (window.confirm('Tem certeza que deseja limpar o histórico de logs locais? Esta ação não pode ser desfeita.')) {
-      auditLogger.clearLogs();
-      setLogsList([]);
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      const remoteLogs = await firebaseDb.getAuditLogs();
+      if (remoteLogs && remoteLogs.length > 0) {
+        // Unifica logs locais e remotos por ID
+        const local = auditLogger.getLogs();
+        const map = new Map<string, AuditLog>();
+        remoteLogs.forEach(l => map.set(l.id, l));
+        local.forEach(l => map.set(l.id, l));
+        const merged = Array.from(map.values()).sort(
+          (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+        );
+        setLogsList(merged);
+      } else {
+        setLogsList(auditLogger.getLogs());
+      }
+    } catch {
+      setLogsList(auditLogger.getLogs());
+    } finally {
+      setIsRefreshing(false);
     }
   };
+
+  useEffect(() => {
+    handleRefresh();
+  }, []);
 
   const filteredLogs = useMemo(() => {
     const term = searchTerm.toLowerCase().trim();
@@ -62,6 +83,13 @@ export const AuditLogView: React.FC<AuditLogViewProps> = () => {
       return matchDesc || matchUser || matchAction || matchDetails;
     });
   }, [logsList, searchTerm, selectedCategory, selectedPeriod]);
+
+  // Paginação sob demanda com cache de páginas anteriores
+  const pagination = usePaginatedList<AuditLog>({
+    items: filteredLogs,
+    initialPageSize: 10,
+    dependencies: [searchTerm, selectedCategory, selectedPeriod, logsList.length]
+  });
 
   const getActionIcon = (categoria: string) => {
     switch (categoria) {
@@ -120,20 +148,17 @@ export const AuditLogView: React.FC<AuditLogViewProps> = () => {
         </div>
 
         <div className="flex items-center gap-2 self-start sm:self-auto">
+          <div className="px-3 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-semibold flex items-center gap-1.5" title="Conformidade LGPD: Logs imutáveis protegidos contra exclusão ou adulteração">
+            <ShieldCheck className="w-4 h-4 text-emerald-400" />
+            <span className="hidden sm:inline">Trilha Imutável (Append-Only)</span>
+          </div>
           <button
             onClick={handleRefresh}
-            className="px-3.5 py-2 rounded-xl bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 text-white font-semibold text-xs flex items-center gap-1.5 cursor-pointer transition-colors"
+            disabled={isRefreshing}
+            className="px-3.5 py-2 rounded-xl bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 text-white font-semibold text-xs flex items-center gap-1.5 cursor-pointer transition-colors disabled:opacity-50"
           >
-            <RefreshCw className="w-3.5 h-3.5 text-neutral-400" />
-            Atualizar
-          </button>
-          <button
-            onClick={handleClear}
-            className="px-3.5 py-2 rounded-xl bg-neutral-900 hover:bg-red-500/20 border border-neutral-800 hover:border-red-500/30 text-neutral-400 hover:text-red-400 font-semibold text-xs flex items-center gap-1.5 cursor-pointer transition-colors"
-            title="Limpar logs locais"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-            Limpar
+            <RefreshCw className={`w-3.5 h-3.5 text-neutral-400 ${isRefreshing ? 'animate-spin' : ''}`} />
+            {isRefreshing ? 'Sincronizando...' : 'Atualizar'}
           </button>
         </div>
       </div>
@@ -213,14 +238,14 @@ export const AuditLogView: React.FC<AuditLogViewProps> = () => {
             <thead>
               <tr className="bg-neutral-950/80 border-b border-neutral-800 text-neutral-400 uppercase text-[10px] tracking-wider font-semibold">
                 <th className="py-3 px-4">Data & Horário</th>
-                <th className="py-3 px-4">Ação / Categoria</th>
+                <th className="py-3 px-4">Categoria da Ação</th>
                 <th className="py-3 px-4">Responsável</th>
                 <th className="py-3 px-4">Descrição da Ocorrência</th>
                 <th className="py-3 px-4 text-right">Detalhes</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-800/60 text-neutral-300">
-              {filteredLogs.length === 0 ? (
+              {pagination.totalItems === 0 ? (
                 <tr>
                   <td colSpan={5} className="text-center py-12 text-neutral-500">
                     <Clock className="w-8 h-8 mx-auto mb-2 opacity-40" />
@@ -228,7 +253,7 @@ export const AuditLogView: React.FC<AuditLogViewProps> = () => {
                   </td>
                 </tr>
               ) : (
-                filteredLogs.map((log) => (
+                pagination.paginatedItems.map((log) => (
                   <tr key={log.id} className="hover:bg-neutral-800/40 transition-colors">
                     {/* Timestamp */}
                     <td className="py-3 px-4 whitespace-nowrap text-neutral-400 font-mono text-[11px]">
@@ -281,14 +306,20 @@ export const AuditLogView: React.FC<AuditLogViewProps> = () => {
           </table>
         </div>
 
-        {/* Footer info */}
-        <div className="bg-neutral-950/80 px-4 py-3 border-t border-neutral-800 flex items-center justify-between text-xs text-neutral-500">
-          <span>
-            Exibindo <strong className="text-white tabular-nums">{filteredLogs.length}</strong> de <strong className="text-white tabular-nums">{logsList.length}</strong> eventos registrados.
-          </span>
-          <span className="text-[11px]">
-            Persistência local e nuvem Firestore (VA VEÍCULOS)
-          </span>
+        {/* Paginação com cache inteligente de páginas anteriores */}
+        <div className="p-3 bg-neutral-950 border-t border-neutral-800">
+          <PaginationControls
+            currentPage={pagination.currentPage}
+            totalPages={pagination.totalPages}
+            totalItems={pagination.totalItems}
+            pageSize={pagination.pageSize}
+            onPageChange={pagination.goToPage}
+            onPageSizeChange={pagination.changePageSize}
+            pageSizeOptions={[10, 20, 50]}
+            isCached={pagination.isCurrentPageCached}
+            isLoading={pagination.isLoading || isRefreshing}
+            itemLabel="eventos de auditoria"
+          />
         </div>
       </div>
 
@@ -329,7 +360,7 @@ export const AuditLogView: React.FC<AuditLogViewProps> = () => {
               </div>
 
               <div>
-                <span className="text-neutral-500 block uppercase text-[10px] font-semibold mb-1">Payload / Metadados (JSON)</span>
+                <span className="text-neutral-500 block uppercase text-[10px] font-semibold mb-1">Metadados da Ocorrência (JSON)</span>
                 <pre className="p-4 rounded-xl bg-neutral-950 border border-neutral-800 text-[11px] font-mono text-amber-300/90 overflow-x-auto max-h-60">
                   {JSON.stringify(selectedLogForDetails.detalhes, null, 2)}
                 </pre>
@@ -351,3 +382,5 @@ export const AuditLogView: React.FC<AuditLogViewProps> = () => {
     </div>
   );
 };
+
+export default AuditLogView;

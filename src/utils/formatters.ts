@@ -180,6 +180,66 @@ export function maskRenavam(value: string): string {
   return value.replace(/\D/g, '').slice(0, 11);
 }
 
+/**
+ * Validação de Telefone / Celular brasileiro (10 dígitos fixo ou 11 dígitos celular)
+ * Suporta formatos com DDD nacional (11 a 99)
+ */
+export function isValidPhone(value: string): boolean {
+  if (!value) return false;
+  const digits = value.replace(/\D/g, '');
+  if (digits.length !== 10 && digits.length !== 11) return false;
+  // Rejeita sequências de dígitos repetidos como 11111111111 ou 0000000000
+  if (/^(\d)\1+$/.test(digits)) return false;
+  const ddd = parseInt(digits.substring(0, 2), 10);
+  if (ddd < 11 || ddd > 99) return false;
+  // Celulares no Brasil (11 dígitos) iniciam com o dígito 9 após o DDD
+  if (digits.length === 11 && digits.charAt(2) !== '9') return false;
+  return true;
+}
+
+/**
+ * Validação de CEP brasileiro (exatamente 8 dígitos numéricos)
+ */
+export function isValidCEP(value: string): boolean {
+  if (!value) return false;
+  const digits = value.replace(/\D/g, '');
+  if (digits.length !== 8) return false;
+  if (/^(\d)\1{7}$/.test(digits)) return false;
+  return true;
+}
+
+/**
+ * Validação de Placa Veicular (Mercosul ABC1D23 ou Tradicional ABC1234 / ABC-1234)
+ */
+export function isValidPlate(value: string): boolean {
+  if (!value) return false;
+  const clean = value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (clean.length !== 7) return false;
+  const isTraditional = /^[A-Z]{3}[0-9]{4}$/.test(clean);
+  const isMercosul = /^[A-Z]{3}[0-9][A-Z][0-9]{2}$/.test(clean);
+  return isTraditional || isMercosul;
+}
+
+/**
+ * Validação de RENAVAM (exatamente 11 dígitos numéricos)
+ */
+export function isValidRenavam(value: string): boolean {
+  if (!value) return false;
+  const digits = value.replace(/\D/g, '');
+  if (digits.length !== 11) return false;
+  if (/^(\d)\1{10}$/.test(digits)) return false;
+  return true;
+}
+
+/**
+ * Validação de Ano de Fabricação / Modelo (4 dígitos, entre 1900 e ano atual + 2)
+ */
+export function isValidYear(year: number | string): boolean {
+  const num = typeof year === 'number' ? year : parseInt(String(year).replace(/\D/g, ''), 10);
+  const maxYear = new Date().getFullYear() + 2;
+  return !isNaN(num) && num >= 1900 && num <= maxYear;
+}
+
 export function formatNumber(value: number): string {
   if (isNaN(value)) return '0';
   return new Intl.NumberFormat('pt-BR').format(value);

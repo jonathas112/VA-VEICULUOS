@@ -1,0 +1,40 @@
+USER FACING SLASH COUNT: 18
+
+### FILE: src\App.tsx (1 occurrences)
+  L720: [Viewer/Printer] => {/* MODAL 4: Contracts and Receipts Viewer/Printer with dynamic variables */}
+
+### FILE: src\components\auth\LoginView.tsx (1 occurrences)
+  L169: [Login / Email] => {/* Login / Email */}
+
+### FILE: src\components\management\InventoryView.tsx (1 occurrences)
+  L200: [Lista / Tabela] => {/* 5. Lista / Tabela de Veículos */}
+
+### FILE: src\components\management\SettingsView.tsx (3 occurrences)
+  L1340: [Ativar/Desativar] => {/* Botões de Ação: Ativar/Desativar, Editar e Apagar */}
+  L1591: [Ativar/Desativar] => {/* Botões de Ação: Ativar/Desativar, Editar e Apagar */}
+  L1807: [Equipe / Vendedor] => {/* MODAL 3: Editar Membro da Equipe / Vendedor */}
+
+### FILE: src\components\management\UsersManagementView.tsx (3 occurrences)
+  L523: [Cadastro / Edição] => {/* MODAL 1: Cadastro / Edição de Usuário                                     */}
+  L607: [Email / Login] => {/* Email / Login */}
+  L724: [Senha / PIN] => {/* MODAL 2: Redefinição de Senha / PIN                                       */}
+
+### FILE: src\components\management\VehicleHistoryView.tsx (4 occurrences)
+  L273: [Situação / Saída] => {/* Situação / Saída */}
+  L336: [COMPLETA / DOSSIÊ] => {/* MODAL DE FICHA COMPLETA / DOSSIÊ DO VEÍCULO */}
+  L403: [Entrada / Compra] => {/* Evento 1: Entrada / Compra */}
+  L474: [Venda / Saída] => {/* Evento 3: Venda / Saída (Se houver) */}
+
+### FILE: src\components\navigation\Sidebar.tsx (2 occurrences)
+  L339: [Logout / Exit] => {/* Logout / Exit Session Button */}
+  L354: [Collapse/Expand] => {/* Desktop Quick Collapse/Expand Button */}
+
+### FILE: src\components\navigation\Topbar.tsx (1 occurrences)
+  L74: [Mobile / Collapsed] => {/* Mobile / Collapsed Institutional Logo in Topbar */}
+
+### FILE: src\components\showroom\VehicleDetailModal.tsx (1 occurrences)
+  L165: [Anterior / Próximo] => {/* Botões de Navegação Anterior / Próximo */}
+
+### FILE: src\utils\templateEngine.ts (1 occurrences)
+  L60: [DD/MM] => { tag: '{data_atual}', label: 'Data Atual (DD/MM/AAAA)', exemplo: '13/10/2026' },
+

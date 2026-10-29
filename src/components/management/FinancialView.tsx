@@ -286,7 +286,7 @@ export const FinancialView: React.FC<FinancialViewProps> = ({
 
         {/* Pós-Venda */}
         <KpiCard
-          title="Pós-Venda / Garantia"
+          title="Custos de Pós-Venda"
           value={formatCurrency(metrics.postSaleTotal)}
           icon={ShieldCheck}
           subtext="Oficina & socorro 24h"
@@ -429,8 +429,8 @@ export const FinancialView: React.FC<FinancialViewProps> = ({
             <table className="w-full text-left text-xs">
               <thead>
                 <tr className="border-b border-[#2D2D32] text-[#CAC9CA]">
-                  <th className="py-2.5 px-3 font-semibold">Data / Veículo</th>
-                  <th className="py-2.5 px-3 font-semibold">Vendedor / Cliente</th>
+                  <th className="py-2.5 px-3 font-semibold">Veículo e Data</th>
+                  <th className="py-2.5 px-3 font-semibold">Vendedor e Cliente</th>
                   <th className="py-2.5 px-3 font-semibold text-right">Venda (Bruta)</th>
                   <th className="py-2.5 px-3 font-semibold text-right">Aquisição</th>
                   <th className="py-2.5 px-3 font-semibold text-right">Pátio</th>

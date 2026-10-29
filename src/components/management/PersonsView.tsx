@@ -1,11 +1,13 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Users, Search, UserPlus, Phone, MapPin, 
   Car, ShoppingCart, DollarSign, Calendar, MessageCircle, 
   ArrowUpRight, Edit, X, Check, Eye, FileText
 } from 'lucide-react';
 import { FormerOwner, Vehicle, Sale, StoreProfile } from '../../types';
-import { formatCurrency, formatDate, maskCPF, maskPhone, maskCEP, isValidCPF } from '../../utils/formatters';
+import { formatCurrency, formatDate, maskCPF, maskPhone, maskCEP, isValidCPF, isValidPhone, isValidCEP } from '../../utils/formatters';
+import { PaginationControls } from '../common/PaginationControls';
+import { usePaginatedList } from '../../hooks/usePaginatedList';
 
 interface PersonsViewProps {
   owners: FormerOwner[];
@@ -14,6 +16,7 @@ interface PersonsViewProps {
   store: StoreProfile;
   onSaveOwner: (owner: FormerOwner) => void;
   onSelectVehicleHistory?: (vehicleId: string) => void;
+  initialSearchTerm?: string;
 }
 
 export const PersonsView: React.FC<PersonsViewProps> = ({
@@ -22,9 +25,16 @@ export const PersonsView: React.FC<PersonsViewProps> = ({
   sales,
   store,
   onSaveOwner,
-  onSelectVehicleHistory
+  onSelectVehicleHistory,
+  initialSearchTerm = ''
 }) => {
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useState(initialSearchTerm);
+
+  useEffect(() => {
+    if (initialSearchTerm) {
+      setSearchTerm(initialSearchTerm);
+    }
+  }, [initialSearchTerm]);
   const [selectedPersonForDetail, setSelectedPersonForDetail] = useState<FormerOwner | null>(null);
   const [isEditingPerson, setIsEditingPerson] = useState(false);
   const [isCreatingPerson, setIsCreatingPerson] = useState(false);
@@ -88,6 +98,13 @@ export const PersonsView: React.FC<PersonsViewProps> = ({
       return matchName || matchCpf || matchPhone || matchCity;
     });
   }, [consolidatedPersons, searchTerm]);
+
+  // Paginação com cache sob demanda
+  const pagination = usePaginatedList<FormerOwner>({
+    items: filteredPersons,
+    initialPageSize: 9,
+    dependencies: [searchTerm, filteredPersons.length]
+  });
 
   // Veículos vendidos e comprados da pessoa selecionada
   const personHistory = useMemo(() => {
@@ -155,6 +172,14 @@ export const PersonsView: React.FC<PersonsViewProps> = ({
     }
     if (!formCpf.trim() || !isValidCPF(formCpf)) {
       setFormError('Informe um CPF válido com 11 dígitos.');
+      return;
+    }
+    if (formTelefone && !isValidPhone(formTelefone)) {
+      setFormError('Informe um WhatsApp válido com DDD (10 ou 11 dígitos).');
+      return;
+    }
+    if (formCep && !isValidCEP(formCep)) {
+      setFormError('Informe um CEP válido com 8 dígitos.');
       return;
     }
 
@@ -236,12 +261,12 @@ export const PersonsView: React.FC<PersonsViewProps> = ({
 
       {/* Grid de Pessoas */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {filteredPersons.length === 0 ? (
+        {pagination.totalItems === 0 ? (
           <div className="col-span-full text-center py-12 bg-neutral-900/40 rounded-2xl border border-neutral-800 text-neutral-500 text-xs">
             Nenhuma pessoa encontrada com o termo pesquisado.
           </div>
         ) : (
-          filteredPersons.map((person) => {
+          pagination.paginatedItems.map((person) => {
             const cleanCpf = person.cpf.replace(/\D/g, '');
             const soldCount = vehicles.filter(v => v.antigoDonoId === person.id || owners.find(o => o.id === v.antigoDonoId)?.cpf.replace(/\D/g, '') === cleanCpf).length;
             const boughtCount = sales.filter(s => s.clienteCpf.replace(/\D/g, '') === cleanCpf).length;
@@ -323,6 +348,22 @@ export const PersonsView: React.FC<PersonsViewProps> = ({
         )}
       </div>
 
+      {/* Paginação com Cache */}
+      {pagination.totalItems > 0 && (
+        <PaginationControls
+          currentPage={pagination.currentPage}
+          totalPages={pagination.totalPages}
+          totalItems={pagination.totalItems}
+          pageSize={pagination.pageSize}
+          onPageChange={pagination.goToPage}
+          onPageSizeChange={pagination.changePageSize}
+          pageSizeOptions={[6, 9, 18, 36]}
+          isCached={pagination.isCurrentPageCached}
+          isLoading={pagination.isLoading}
+          itemLabel="pessoas e clientes"
+        />
+      )}
+
       {/* MODAL DE DOSSIÊ DA PESSOA */}
       {selectedPersonForDetail && !isEditingPerson && !isCreatingPerson && (
         <div className="fixed inset-0 z-50 overflow-y-auto bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6">
@@ -367,7 +408,7 @@ export const PersonsView: React.FC<PersonsViewProps> = ({
               {/* Resumo Cadastral */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-neutral-950 p-4 rounded-xl border border-neutral-800">
                 <div>
-                  <span className="text-[10px] text-neutral-500 block uppercase">Telefone / WhatsApp</span>
+                  <span className="text-[10px] text-neutral-500 block uppercase">WhatsApp</span>
                   <div className="flex items-center gap-2 mt-0.5">
                     <strong className="text-white text-sm">{selectedPersonForDetail.telefone}</strong>
                     <button
@@ -403,7 +444,7 @@ export const PersonsView: React.FC<PersonsViewProps> = ({
                     Veículos Vendidos para a VA Veículos ({personHistory.soldToStore.length})
                   </h4>
                   <span className="text-neutral-400 text-xs">
-                    Entradas / Aquisições da Loja
+                    Entradas da Loja
                   </span>
                 </div>
 
@@ -453,10 +494,10 @@ export const PersonsView: React.FC<PersonsViewProps> = ({
                 <div className="flex items-center justify-between mb-3">
                   <h4 className="text-sm font-bold text-white flex items-center gap-2">
                     <ShoppingCart className="w-4 h-4 text-emerald-500" />
-                    Veículos Adquiridos / Comprados da VA Veículos ({personHistory.boughtFromStore.length})
+                    Veículos Comprados da VA Veículos ({personHistory.boughtFromStore.length})
                   </h4>
                   <span className="text-neutral-400 text-xs">
-                    Saídas / Vendas Concluídas
+                    Vendas Concluídas
                   </span>
                 </div>
 
@@ -508,14 +549,14 @@ export const PersonsView: React.FC<PersonsViewProps> = ({
         </div>
       )}
 
-      {/* MODAL DE CADASTRO / EDIÇÃO DE PESSOA */}
+      {/* MODAL DE CADASTRO DE PESSOA */}
       {(isCreatingPerson || isEditingPerson) && (
         <div className="fixed inset-0 z-50 overflow-y-auto bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6">
           <div className="bg-neutral-900 border border-neutral-800 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl relative text-white my-8">
             <div className="p-5 border-b border-neutral-800 flex items-center justify-between bg-neutral-950">
               <h3 className="text-base font-bold text-white flex items-center gap-2">
                 <Users className="w-5 h-5 text-amber-500" />
-                {isCreatingPerson ? 'Cadastrar Nova Pessoa / Cliente' : 'Editar Dados de Pessoa'}
+                {isCreatingPerson ? 'Cadastrar Novo Cliente' : 'Editar Dados de Pessoa'}
               </h3>
               <button
                 onClick={() => {
@@ -553,6 +594,7 @@ export const PersonsView: React.FC<PersonsViewProps> = ({
                   <input
                     type="text"
                     required
+                    maxLength={14}
                     value={formCpf}
                     onChange={(e) => setFormCpf(maskCPF(e.target.value))}
                     placeholder="000.000.000-00"
@@ -563,9 +605,10 @@ export const PersonsView: React.FC<PersonsViewProps> = ({
                   <label className="block text-neutral-400 font-semibold mb-1">RG</label>
                   <input
                     type="text"
+                    maxLength={20}
                     value={formRg}
                     onChange={(e) => setFormRg(e.target.value)}
-                    placeholder="Ex: 3.456.789 SSP/PB"
+                    placeholder="Ex: 3.456.789 SSP-PB"
                     className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-amber-500"
                   />
                 </div>
@@ -573,10 +616,11 @@ export const PersonsView: React.FC<PersonsViewProps> = ({
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-neutral-400 font-semibold mb-1">Telefone / WhatsApp *</label>
+                  <label className="block text-neutral-400 font-semibold mb-1">WhatsApp *</label>
                   <input
                     type="text"
                     required
+                    maxLength={15}
                     value={formTelefone}
                     onChange={(e) => setFormTelefone(maskPhone(e.target.value))}
                     placeholder="(83) 98765-4321"
@@ -587,6 +631,7 @@ export const PersonsView: React.FC<PersonsViewProps> = ({
                   <label className="block text-neutral-400 font-semibold mb-1">CEP</label>
                   <input
                     type="text"
+                    maxLength={9}
                     value={formCep}
                     onChange={(e) => setFormCep(maskCEP(e.target.value))}
                     placeholder="58140-000"
@@ -636,7 +681,7 @@ export const PersonsView: React.FC<PersonsViewProps> = ({
                   rows={2}
                   value={formObservacoes}
                   onChange={(e) => setFormObservacoes(e.target.value)}
-                  placeholder="Notas sobre perfil de compra/venda, preferências, etc."
+                  placeholder="Notas sobre preferências, perfil comercial, etc."
                   className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-amber-500 resize-none"
                 />
               </div>

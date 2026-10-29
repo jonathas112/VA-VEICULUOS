@@ -9,7 +9,8 @@ import {
 } from '../../types';
 import { 
   formatCurrency, computeAcquisitionCost, 
-  computePatioExpenses, computePreSaleTotalCost, computeMarginPercent 
+  computePatioExpenses, computePreSaleTotalCost, computeMarginPercent,
+  maskCPF, maskPhone, isValidCPF, isValidPhone
 } from '../../utils/formatters';
 
 interface VehicleSaleModalProps {
@@ -108,6 +109,16 @@ export const VehicleSaleModal: React.FC<VehicleSaleModalProps> = ({
 
     if (!clienteNome || !clienteCpf || !clienteEndereco) {
       alert('Por favor, preencha os dados cadastrais do cliente comprador (Nome, CPF e Endereço).');
+      return;
+    }
+
+    if (!isValidCPF(clienteCpf)) {
+      alert('Por favor, informe um CPF válido com 11 dígitos para o cliente comprador.');
+      return;
+    }
+
+    if (clienteTelefone && !isValidPhone(clienteTelefone)) {
+      alert('Por favor, informe um número de WhatsApp válido com DDD (10 ou 11 dígitos).');
       return;
     }
 
@@ -245,21 +256,23 @@ export const VehicleSaleModal: React.FC<VehicleSaleModalProps> = ({
                 <input
                   type="text"
                   required
+                  maxLength={14}
                   value={clienteCpf}
-                  onChange={(e) => setClienteCpf(e.target.value)}
+                  onChange={(e) => setClienteCpf(maskCPF(e.target.value))}
                   placeholder="000.000.000-00"
-                  className="w-full bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 text-xs text-white focus:border-amber-500 focus:outline-none"
+                  className="w-full bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 text-xs text-white focus:border-amber-500 focus:outline-none font-mono"
                 />
               </div>
 
               <div>
-                <label className="text-xs text-neutral-400 block mb-1">Telefone / WhatsApp</label>
+                <label className="text-xs text-neutral-400 block mb-1">WhatsApp</label>
                 <input
                   type="text"
+                  maxLength={15}
                   value={clienteTelefone}
-                  onChange={(e) => setClienteTelefone(e.target.value)}
-                  placeholder="(11) 98888-7777"
-                  className="w-full bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 text-xs text-white focus:border-amber-500 focus:outline-none"
+                  onChange={(e) => setClienteTelefone(maskPhone(e.target.value))}
+                  placeholder="(83) 98765-4321"
+                  className="w-full bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 text-xs text-white focus:border-amber-500 focus:outline-none font-mono"
                 />
               </div>
 
@@ -312,9 +325,10 @@ export const VehicleSaleModal: React.FC<VehicleSaleModalProps> = ({
                   type="number"
                   required
                   min={1}
-                  step={500}
-                  value={valorVenda}
-                  onChange={(e) => setValorVenda(Number(e.target.value))}
+                  max={50000000}
+                  step={100}
+                  value={valorVenda || ''}
+                  onChange={(e) => setValorVenda(Math.max(0, Number(e.target.value)))}
                   className="w-full bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 text-sm font-bold text-emerald-400 focus:border-amber-500 focus:outline-none"
                 />
               </div>
@@ -327,9 +341,9 @@ export const VehicleSaleModal: React.FC<VehicleSaleModalProps> = ({
                   className="w-full bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 text-xs text-white focus:border-amber-500 focus:outline-none"
                 >
                   <option value="financiamento">Financiamento Bancário</option>
-                  <option value="a_vista_pix">À Vista (Pix / TED)</option>
+                  <option value="a_vista_pix">À Vista (Pix)</option>
                   <option value="cartao_credito">Cartão de Crédito</option>
-                  <option value="misto">Misto (Entrada + Financiamento / Cartão)</option>
+                  <option value="misto">Misto (Entrada + Financiamento)</option>
                 </select>
               </div>
             </div>
@@ -363,9 +377,10 @@ export const VehicleSaleModal: React.FC<VehicleSaleModalProps> = ({
                   <input
                     type="number"
                     min={0}
-                    step={500}
+                    max={50000000}
+                    step={100}
                     value={valorEntrada}
-                    onChange={(e) => setValorEntrada(Number(e.target.value))}
+                    onChange={(e) => setValorEntrada(Math.max(0, Number(e.target.value)))}
                     className="w-full bg-neutral-950 border border-neutral-700 rounded-lg px-3 py-2 text-xs text-white focus:border-amber-500 focus:outline-none"
                   />
                 </div>
@@ -504,9 +519,10 @@ export const VehicleSaleModal: React.FC<VehicleSaleModalProps> = ({
                     <input
                       type="number"
                       min={0}
+                      max={1000000}
                       step={50}
                       value={comissaoValor}
-                      onChange={(e) => setComissaoValor(Number(e.target.value))}
+                      onChange={(e) => setComissaoValor(Math.max(0, Number(e.target.value)))}
                       className="w-full bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 text-sm font-bold text-amber-400 focus:border-amber-500 focus:outline-none"
                     />
                   </div>

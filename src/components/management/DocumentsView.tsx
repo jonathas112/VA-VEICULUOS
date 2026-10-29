@@ -7,6 +7,7 @@ import {
 import { ContractTemplate, StoreProfile, Vehicle, FormerOwner, Sale } from '../../types';
 import { PageHeader, KpiCard, UnderlineTabs, formStyles } from '../common/DesignSystem';
 import { renderTemplate } from '../../utils/templateEngine';
+import { printA4Document } from '../../utils/printDocument';
 
 interface DocumentsViewProps {
   templates: ContractTemplate[];
@@ -73,7 +74,10 @@ export const DocumentsView: React.FC<DocumentsViewProps> = ({
   };
 
   const handlePrint = () => {
-    window.print();
+    printA4Document({
+      title: `${currentTemplate?.titulo || 'Documento Oficial'} - ${currentVehicle?.modelo || ''}`,
+      elementId: 'documents-view-sheet'
+    });
   };
 
   const handleSaveTemplate = (e: React.FormEvent) => {
@@ -273,14 +277,45 @@ export const DocumentsView: React.FC<DocumentsViewProps> = ({
                   className="px-3.5 py-1.5 rounded-[8px] bg-[#D4130D] hover:bg-[#E3271F] text-white text-xs font-bold flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer"
                 >
                   <Printer className="w-3.5 h-3.5" />
-                  <span>Imprimir / Gerar PDF</span>
+                  <span>Imprimir PDF</span>
                 </button>
               </div>
             </div>
 
             {/* Document Sheet Simulation */}
-            <div className="flex-1 mt-5 bg-white text-neutral-900 rounded-[8px] p-6 sm:p-10 shadow-lg border border-neutral-300 font-serif leading-relaxed text-xs sm:text-sm whitespace-pre-wrap select-text max-h-[70vh] overflow-y-auto">
-              {renderedContent}
+            <div 
+              id="documents-view-sheet" 
+              className="flex-1 mt-5 bg-white text-neutral-900 rounded-[8px] p-6 sm:p-10 shadow-lg border border-neutral-300 leading-relaxed text-xs sm:text-sm select-text max-h-[70vh] overflow-y-auto"
+            >
+              {/* Cabeçalho Oficial Timbrado */}
+              <div className="border-b-2 border-neutral-800 pb-3 mb-4 text-center">
+                <h2 className="text-base font-extrabold text-neutral-900 uppercase font-display">
+                  {store.nomeFantasia || 'VA VEÍCULOS'}
+                </h2>
+                <p className="text-[10px] text-neutral-600 font-medium">
+                  {store.razaoSocial} • CNPJ: {store.cnpj}
+                </p>
+                <p className="text-[10px] text-neutral-500">
+                  {store.endereco}, {store.cidade} - {store.estado} • WhatsApp: {store.whatsapp}
+                </p>
+              </div>
+
+              {/* Título do Modelo */}
+              <div className="text-center mb-4">
+                <h3 className="font-bold text-xs uppercase tracking-wide border-b-2 border-neutral-900 pb-1 inline-block text-neutral-900">
+                  {currentTemplate?.titulo}
+                </h3>
+              </div>
+
+              {/* Conteúdo Renderizado */}
+              <div className="whitespace-pre-wrap text-justify text-neutral-900 font-normal">
+                {renderedContent}
+              </div>
+
+              {/* Rodapé Timbrado */}
+              <div className="mt-8 pt-3 border-t border-neutral-200 text-center text-[9px] text-neutral-500 footer-block">
+                {store.nomeFantasia} • Documento Oficial • {store.cidade} - {store.estado} • WhatsApp: {store.whatsapp}
+              </div>
             </div>
 
             {/* Document Notice Footer */}
@@ -355,7 +390,7 @@ export const DocumentsView: React.FC<DocumentsViewProps> = ({
               </div>
 
               <div>
-                <label className={formStyles.label}>Descrição / Finalidade</label>
+                <label className={formStyles.label}>Finalidade do Documento</label>
                 <input
                   type="text"
                   value={editingTemplate.descricao}

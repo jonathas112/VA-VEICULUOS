@@ -9,6 +9,8 @@ import {
   computePostSaleCosts, formatDate 
 } from '../../utils/formatters';
 import { PageHeader, KpiCard, StatusBadge, formStyles } from '../common/DesignSystem';
+import { PaginationControls } from '../common/PaginationControls';
+import { usePaginatedList } from '../../hooks/usePaginatedList';
 
 interface PendingCommissionsViewProps {
   sales: Sale[];
@@ -25,6 +27,13 @@ export const PendingCommissionsView: React.FC<PendingCommissionsViewProps> = ({
 }) => {
   const pendingSales = sales.filter(s => s.comissaoPendente);
 
+  // Paginação sob demanda com cache
+  const pagination = usePaginatedList<Sale>({
+    items: pendingSales,
+    initialPageSize: 5,
+    dependencies: [pendingSales.length]
+  });
+
   // Local state for commission inputs per sale
   const [commissionInputs, setCommissionInputs] = useState<Record<string, number>>({});
 
@@ -33,6 +42,10 @@ export const PendingCommissionsView: React.FC<PendingCommissionsViewProps> = ({
   };
 
   const handleApprove = (saleId: string) => {
+    if (userRole !== 'gestor') {
+      alert('Operação negada: apenas o Gestor tem permissão para aprovar e fixar comissões.');
+      return;
+    }
     const amount = commissionInputs[saleId] !== undefined ? commissionInputs[saleId] : 1200;
     if (isNaN(amount) || amount < 0) {
       alert('Informe um valor de comissão válido.');
@@ -50,7 +63,7 @@ export const PendingCommissionsView: React.FC<PendingCommissionsViewProps> = ({
       <PageHeader
         breadcrumb="Financeiro • Controle de Comissões"
         title="Comissões Pendentes de Aprovação"
-        subtitle="Vendas registradas pela equipe de corretores/vendedores aguardando fixação manual e deliberação da diretoria."
+        subtitle="Vendas registradas pela equipe de vendedores aguardando fixação manual e deliberação da diretoria."
       />
 
       {/* 2. Mini-KPIs */}
@@ -88,7 +101,7 @@ export const PendingCommissionsView: React.FC<PendingCommissionsViewProps> = ({
       )}
 
       {/* 3. Lista de Vendas Pendentes */}
-      {pendingSales.length === 0 ? (
+      {pagination.totalItems === 0 ? (
         <div className="p-12 text-center bg-[#17171A] border border-[#2D2D32] rounded-[12px]">
           <CheckCircle2 className="w-12 h-12 text-[#22C55E] mx-auto mb-3" />
           <h3 className="text-base font-bold text-[#F5F5F5] font-display">
@@ -100,7 +113,7 @@ export const PendingCommissionsView: React.FC<PendingCommissionsViewProps> = ({
         </div>
       ) : (
         <div className="space-y-4">
-          {pendingSales.map((sale) => {
+          {pagination.paginatedItems.map((sale) => {
             const vehicle = vehicles.find(v => v.id === sale.veiculoId);
             const preSaleCost = vehicle ? computePreSaleTotalCost(vehicle) : 0;
             const postSaleCosts = computePostSaleCosts(sale);
@@ -147,7 +160,7 @@ export const PendingCommissionsView: React.FC<PendingCommissionsViewProps> = ({
                 {/* Costs breakdown and live simulator */}
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-4 rounded-[8px] bg-[#202024] border border-[#2D2D32] text-xs">
                   <div>
-                    <span className="text-[#A7A7AB] uppercase text-[10px] block">Custo de Pátio / Aquisição</span>
+                    <span className="text-[#A7A7AB] uppercase text-[10px] block">Custo Total de Aquisição</span>
                     <span className="font-semibold text-[#F5F5F5] font-num">{formatCurrency(preSaleCost)}</span>
                   </div>
                   <div>
@@ -206,6 +219,22 @@ export const PendingCommissionsView: React.FC<PendingCommissionsViewProps> = ({
             );
           })}
         </div>
+      )}
+
+      {/* Paginação de Comissões Pendentes */}
+      {pagination.totalItems > 0 && (
+        <PaginationControls
+          currentPage={pagination.currentPage}
+          totalPages={pagination.totalPages}
+          totalItems={pagination.totalItems}
+          pageSize={pagination.pageSize}
+          onPageChange={pagination.goToPage}
+          onPageSizeChange={pagination.changePageSize}
+          pageSizeOptions={[5, 10, 20]}
+          isCached={pagination.isCurrentPageCached}
+          isLoading={pagination.isLoading}
+          itemLabel="comissões pendentes"
+        />
       )}
 
     </div>

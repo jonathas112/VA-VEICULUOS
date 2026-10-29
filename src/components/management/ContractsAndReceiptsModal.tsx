@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { Vehicle, FormerOwner, Sale, StoreProfile, ContractTemplate } from '../../types';
 import { renderTemplate } from '../../utils/templateEngine';
+import { printA4Document } from '../../utils/printDocument';
 
 interface ContractsAndReceiptsModalProps {
   isOpen: boolean;
@@ -56,10 +57,25 @@ export const ContractsAndReceiptsModal: React.FC<ContractsAndReceiptsModalProps>
   };
 
   const handlePrint = () => {
-    window.print();
+    printA4Document({
+      title: `${currentTemplate?.titulo || 'Documento Oficial'} - ${vehicle.placa}`,
+      elementId: 'printable-document'
+    });
   };
 
   const paperConfig = store.papelTimbrado;
+
+  const headerAlignClass = paperConfig?.headerAlignment === 'left' 
+    ? 'text-left' 
+    : paperConfig?.headerAlignment === 'right' 
+      ? 'text-right' 
+      : 'text-center';
+
+  const headerJustifyClass = paperConfig?.headerAlignment === 'left' 
+    ? 'justify-start' 
+    : paperConfig?.headerAlignment === 'right' 
+      ? 'justify-end' 
+      : 'justify-center';
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6">
@@ -132,19 +148,19 @@ export const ContractsAndReceiptsModal: React.FC<ContractsAndReceiptsModalProps>
         </div>
 
         {/* Document Content View - Folha A4 Timbrada */}
-        <div className="p-6 overflow-y-auto flex-1 bg-neutral-950 flex justify-center">
+        <div className="p-4 sm:p-8 overflow-y-auto flex-1 bg-neutral-950/95 flex justify-center items-start">
           
           <div 
             id="printable-document"
-            className="bg-white text-neutral-900 p-8 sm:p-12 rounded-xl shadow-2xl max-w-3xl w-full text-xs sm:text-sm leading-relaxed border border-neutral-200"
+            className="bg-white text-neutral-900 p-8 sm:p-14 rounded-xl shadow-2xl max-w-3xl w-full text-xs sm:text-sm leading-relaxed border border-neutral-300 relative min-h-[297mm] h-auto my-2"
             style={{
               fontFamily: paperConfig?.fontFamily || 'Inter, sans-serif'
             }}
           >
             {/* Cabeçalho Oficial Timbrado */}
-            <div className={`border-b-2 border-neutral-800 pb-4 mb-6 text-${paperConfig?.headerAlignment || 'center'}`}>
+            <div className={`border-b-2 border-neutral-800 pb-4 mb-6 ${headerAlignClass}`}>
               {store.logoUrl ? (
-                <div className={`flex justify-${paperConfig?.headerAlignment === 'left' ? 'start' : paperConfig?.headerAlignment === 'right' ? 'end' : 'center'} mb-2`}>
+                <div className={`flex ${headerJustifyClass} mb-2`}>
                   <img 
                     src={store.logoUrl} 
                     alt={store.nomeFantasia} 
@@ -153,13 +169,13 @@ export const ContractsAndReceiptsModal: React.FC<ContractsAndReceiptsModalProps>
                   />
                 </div>
               ) : (
-                <h1 className="text-lg font-black tracking-widest text-neutral-950 uppercase">
+                <h1 className="text-lg font-black tracking-widest text-neutral-950 uppercase font-display">
                   {store.nomeFantasia || 'VA VEÍCULOS'}
                 </h1>
               )}
 
               <div className="text-[10px] text-neutral-600 space-y-0.5 leading-tight">
-                <p className="font-semibold">{store.razaoSocial}</p>
+                <p className="font-semibold text-neutral-800">{store.razaoSocial}</p>
                 {paperConfig?.mostrarCnpj !== false && (
                   <p>CNPJ: {store.cnpj}</p>
                 )}
@@ -174,27 +190,27 @@ export const ContractsAndReceiptsModal: React.FC<ContractsAndReceiptsModalProps>
 
             {/* Título do Documento */}
             <div className="text-center mb-6">
-              <h2 className="text-sm font-extrabold uppercase tracking-wider border-b border-neutral-300 pb-1.5 inline-block text-neutral-950">
+              <h2 className="text-sm font-extrabold uppercase tracking-wider border-b-2 border-neutral-900 pb-1.5 inline-block text-neutral-950">
                 {currentTemplate?.titulo}
               </h2>
             </div>
 
             {/* Conteúdo Renderizado */}
-            <div className="text-xs sm:text-sm leading-relaxed whitespace-pre-wrap text-justify text-neutral-800 font-serif">
+            <div className="text-xs sm:text-sm leading-relaxed whitespace-pre-wrap text-justify text-neutral-900 font-normal">
               {renderedContent}
             </div>
 
             {/* Linhas de Assinatura */}
-            {paperConfig?.mostrarLinhasAssinatura !== false && (
-              <div className="mt-12 pt-6 border-t border-neutral-300 grid grid-cols-2 gap-8 text-center text-xs text-neutral-800">
+            {paperConfig?.mostrarLinhasAssinatura !== false && !renderedContent.includes('______') && (
+              <div className="mt-12 pt-6 border-t border-neutral-300 grid grid-cols-2 gap-8 text-center text-xs text-neutral-900 signature-block">
                 <div>
-                  <div className="border-t border-neutral-400 pt-1 mt-8 font-semibold">
+                  <div className="border-t border-neutral-700 pt-1 mt-8 font-semibold">
                     {store.nomeFantasia}
                   </div>
                   <p className="text-[10px] text-neutral-500">Representante Legal</p>
                 </div>
                 <div>
-                  <div className="border-t border-neutral-400 pt-1 mt-8 font-semibold">
+                  <div className="border-t border-neutral-700 pt-1 mt-8 font-semibold">
                     {sale ? sale.clienteNome : (owner ? owner.nome : 'Cliente')}
                   </div>
                   <p className="text-[10px] text-neutral-500">
@@ -205,7 +221,7 @@ export const ContractsAndReceiptsModal: React.FC<ContractsAndReceiptsModalProps>
             )}
 
             {/* Rodapé Oficial Timbrado */}
-            <div className="mt-8 pt-3 border-t border-neutral-200 text-center text-[9px] text-neutral-500">
+            <div className="mt-10 pt-3 border-t border-neutral-200 text-center text-[9px] text-neutral-500 footer-block">
               {paperConfig?.textoRodape || `${store.nomeFantasia} · ${store.cidade} - ${store.estado} · WhatsApp: ${store.whatsapp}`}
             </div>
           </div>

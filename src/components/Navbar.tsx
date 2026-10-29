@@ -263,17 +263,19 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </button>
               )}
 
-              <button
-                onClick={() => setManagementTab('audit_logs')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
-                  managementTab === 'audit_logs'
-                    ? 'bg-neutral-800 text-amber-400 border border-neutral-700 font-bold'
-                    : 'text-neutral-400 hover:text-white hover:bg-neutral-900'
-                }`}
-              >
-                <ShieldAlert className="w-3.5 h-3.5 text-rose-400" />
-                Log Geral
-              </button>
+              {userRole === 'gestor' && (
+                <button
+                  onClick={() => setManagementTab('audit_logs')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
+                    managementTab === 'audit_logs'
+                      ? 'bg-neutral-800 text-amber-400 border border-neutral-700 font-bold'
+                      : 'text-neutral-400 hover:text-white hover:bg-neutral-900'
+                  }`}
+                >
+                  <ShieldAlert className="w-3.5 h-3.5 text-rose-400" />
+                  Log Geral
+                </button>
+              )}
 
               <button
                 onClick={() => setManagementTab('settings')}

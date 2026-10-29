@@ -65,7 +65,7 @@ export const VehicleCostsModal: React.FC<VehicleCostsModalProps> = ({
 
   const getCategoryLabel = (cat: VehicleExpense['categoria']) => {
     const labels: Record<string, string> = {
-      mecanica: 'Mecânica / Motor',
+      mecanica: 'Mecânica Geral',
       funilaria_pintura: 'Funilaria e Pintura',
       lavagem_estetica: 'Lavagem & Estética',
       despachante_doc: 'Despachante & Doc',
@@ -240,7 +240,7 @@ export const VehicleCostsModal: React.FC<VehicleCostsModalProps> = ({
                   onChange={(e) => setCategoria(e.target.value as any)}
                   className="w-full bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 text-xs text-white focus:border-amber-500 focus:outline-none"
                 >
-                  <option value="mecanica">Mecânica / Motor</option>
+                  <option value="mecanica">Mecânica Geral</option>
                   <option value="funilaria_pintura">Funilaria e Pintura</option>
                   <option value="lavagem_estetica">Lavagem & Estética</option>
                   <option value="despachante_doc">Despachante & Documentação</option>
@@ -264,7 +264,7 @@ export const VehicleCostsModal: React.FC<VehicleCostsModalProps> = ({
               </div>
 
               <div>
-                <label className="text-xs text-neutral-400 block mb-1">Oficina / Responsável</label>
+                <label className="text-xs text-neutral-400 block mb-1">Oficina Responsável</label>
                 <input
                   type="text"
                   value={responsavel}
@@ -275,7 +275,7 @@ export const VehicleCostsModal: React.FC<VehicleCostsModalProps> = ({
               </div>
 
               <div className="sm:col-span-3">
-                <label className="text-xs text-neutral-400 block mb-1">Descrição do Serviço / Peça *</label>
+                <label className="text-xs text-neutral-400 block mb-1">Descrição do Serviço *</label>
                 <input
                   type="text"
                   required
@@ -316,7 +316,7 @@ export const VehicleCostsModal: React.FC<VehicleCostsModalProps> = ({
                       <th className="py-2.5 px-3">Data</th>
                       <th className="py-2.5 px-3">Categoria</th>
                       <th className="py-2.5 px-3">Descrição</th>
-                      <th className="py-2.5 px-3">Oficina / Prestador</th>
+                      <th className="py-2.5 px-3">Oficina Prestadora</th>
                       <th className="py-2.5 px-3 text-right">Valor</th>
                     </tr>
                   </thead>

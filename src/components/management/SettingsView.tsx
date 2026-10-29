@@ -10,10 +10,13 @@ import { StoreProfile, Financier, ContractTemplate, Salesperson, LetterheadConfi
 import { PageHeader, UnderlineTabs } from '../common/DesignSystem';
 import { BrandLogo } from '../common/BrandLogo';
 import { compressImageFile } from '../../utils/imageCompressor';
-import { maskCPF, maskCNPJ, maskPhone, maskCEP } from '../../utils/formatters';
+import { maskCPF, maskCNPJ, maskPhone, maskCEP, isValidCNPJ, isValidPhone, isValidCEP } from '../../utils/formatters';
 import { AVAILABLE_MERGE_TAGS, renderTemplate } from '../../utils/templateEngine';
 import { DEFAULT_TEMPLATES } from '../../data/defaultTemplates';
 import { storageService } from '../../services/storage';
+import { printA4Document } from '../../utils/printDocument';
+import { PaginationControls } from '../common/PaginationControls';
+import { usePaginatedList } from '../../hooks/usePaginatedList';
 
 interface SettingsViewProps {
   store: StoreProfile;
@@ -111,6 +114,22 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   // Handlers da Loja
   const handleSaveStoreSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isValidCNPJ(storeForm.cnpj)) {
+      alert('Por favor, informe um CNPJ válido com 14 dígitos.');
+      return;
+    }
+    if (storeForm.whatsapp && !isValidPhone(storeForm.whatsapp)) {
+      alert('Por favor, informe um WhatsApp oficial válido com DDD (10 ou 11 dígitos).');
+      return;
+    }
+    if (storeForm.telefone && !isValidPhone(storeForm.telefone)) {
+      alert('Por favor, informe um Telefone fixo válido com DDD (10 ou 11 dígitos).');
+      return;
+    }
+    if (storeForm.cep && !isValidCEP(storeForm.cep)) {
+      alert('Por favor, informe um CEP válido com 8 dígitos.');
+      return;
+    }
     onSaveStore(storeForm);
     setStoreSavedNotice(true);
     setTimeout(() => setStoreSavedNotice(false), 3000);
@@ -202,14 +221,22 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   // Handlers de Financeiras
   const handleAddFinancierSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newFinNome) return;
+    if (!newFinNome.trim()) return;
+    if (isNaN(newFinTaxa) || newFinTaxa <= 0 || newFinTaxa > 50) {
+      alert('Por favor, informe uma taxa média de juros válida (entre 0.1% e 50.0% a.m.).');
+      return;
+    }
+    if (newFinTelefone && !isValidPhone(newFinTelefone)) {
+      alert('Por favor, informe um telefone válido com DDD (10 ou 11 dígitos) para a financeira.');
+      return;
+    }
     const fin: Financier = {
       id: 'fin_' + Date.now(),
-      nome: newFinNome,
+      nome: newFinNome.trim(),
       taxaMedia: Number(newFinTaxa),
       telefone: maskPhone(newFinTelefone),
-      contato: newFinContato || undefined,
-      contatoGerente: newFinContato || undefined,
+      contato: newFinContato ? newFinContato.trim() : undefined,
+      contatoGerente: newFinContato ? newFinContato.trim() : undefined,
       ativa: true,
       ativo: true
     };
@@ -251,11 +278,19 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   // Handlers de Vendedores / Membros da Equipe
   const handleAddSellerSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newSellerNome) return;
+    if (!newSellerNome.trim()) return;
+    if (newSellerTelefone && !isValidPhone(newSellerTelefone)) {
+      alert('Por favor, informe um WhatsApp válido com DDD (10 ou 11 dígitos) para o vendedor.');
+      return;
+    }
+    if (isNaN(newSellerMeta) || newSellerMeta < 1 || newSellerMeta > 100) {
+      alert('Informe uma meta mensal válida entre 1 e 100 veículos.');
+      return;
+    }
     const seller: Salesperson = {
       id: 'vend_' + Date.now(),
-      nome: newSellerNome,
-      email: newSellerEmail || `${newSellerNome.toLowerCase().replace(/\s+/g, '')}@vaveiculos.com.br`,
+      nome: newSellerNome.trim(),
+      email: newSellerEmail.trim() || `${newSellerNome.toLowerCase().replace(/\s+/g, '')}@vaveiculos.com.br`,
       telefone: maskPhone(newSellerTelefone),
       metaMensal: Number(newSellerMeta) || 5,
       ativo: true,
@@ -338,6 +373,19 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     return salespeople.filter(s => s.ativo !== false).length;
   }, [salespeople]);
 
+  // Paginação sob demanda com cache
+  const paginatedFinanciers = usePaginatedList<Financier>({
+    items: filteredFinanciers,
+    initialPageSize: 5,
+    dependencies: [financierSearch, financierFilter, filteredFinanciers.length]
+  });
+
+  const paginatedSalespeople = usePaginatedList<Salesperson>({
+    items: filteredSalespeople,
+    initialPageSize: 5,
+    dependencies: [salespersonSearch, salespersonFilter, filteredSalespeople.length]
+  });
+
   const handleSyncFirebase = async () => {
     try {
       setIsSyncing(true);
@@ -398,7 +446,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       id: 'mock_owner',
       nome: 'Carlos Eduardo Oliveira',
       cpf: '345.678.901-23',
-      rg: '2.345.678 SSP/PB',
+      rg: '2.345.678 SSP-PB',
       telefone: '(83) 99876-5432',
       endereco: 'Rua São José, 45',
       cidade: 'Areial',
@@ -410,9 +458,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       dataVenda: '2026-10-13',
       clienteNome: 'Mariana Guimarães Santos',
       clienteCpf: '987.654.321-00',
-      clienteRg: '4.567.890 SSP/PB',
+      clienteRg: '4.567.890 SSP-PB',
       clienteTelefone: '(83) 99123-4567',
-      clienteEndereco: 'Av. Epitácio Pessoa, 1200 - Areial/PB',
+      clienteEndereco: 'Av. Epitácio Pessoa, 1200 - Areial - PB',
       vendedorId: 'vend_carlos',
       vendedorNome: 'Carlos Ramos',
       valorVenda: 104000,
@@ -538,6 +586,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <input
                   type="text"
                   required
+                  maxLength={18}
                   value={storeForm.cnpj}
                   onChange={(e) => setStoreForm({ ...storeForm, cnpj: maskCNPJ(e.target.value) })}
                   className={`${formStyles.input} font-mono`}
@@ -548,6 +597,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <label className={formStyles.label}>Telefone Fixo da Loja</label>
                 <input
                   type="text"
+                  maxLength={15}
                   value={storeForm.telefone}
                   onChange={(e) => setStoreForm({ ...storeForm, telefone: maskPhone(e.target.value) })}
                   className={`${formStyles.input} font-mono`}
@@ -559,6 +609,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <input
                   type="text"
                   required
+                  maxLength={15}
                   value={storeForm.whatsapp}
                   onChange={(e) => setStoreForm({ ...storeForm, whatsapp: maskPhone(e.target.value) })}
                   className={`${formStyles.input} font-mono`}
@@ -598,6 +649,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   <label className={formStyles.label}>CEP</label>
                   <input
                     type="text"
+                    maxLength={9}
                     value={storeForm.cep}
                     onChange={(e) => setStoreForm({ ...storeForm, cep: maskCEP(e.target.value) })}
                     className={`${formStyles.input} font-mono`}
@@ -1009,6 +1061,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
                 {/* Folha A4 Virtual */}
                 <div 
+                  id="letterhead-test-sheet"
                   className="bg-white text-neutral-900 rounded-lg shadow-2xl p-6 overflow-y-auto max-h-[580px] text-left border border-neutral-300"
                   style={{
                     fontFamily: storeForm.papelTimbrado?.fontFamily || 'Inter, sans-serif',
@@ -1069,7 +1122,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       </div>
                       <div>
                         <div className="border-t border-neutral-400 pt-1 mt-6 font-semibold">
-                          Cliente / Adquirente
+                          Cliente
                         </div>
                         <p className="text-[8px] text-neutral-500">CPF: 000.000.000-00</p>
                       </div>
@@ -1087,7 +1140,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <div className="mt-4 pt-3 border-t border-neutral-800 flex justify-end">
                 <button
                   type="button"
-                  onClick={() => window.print()}
+                  onClick={() => printA4Document({ title: 'Folha A4 Timbrada de Teste - VA Veículos', elementId: 'letterhead-test-sheet' })}
                   className="px-4 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-white font-semibold text-xs flex items-center gap-1.5 cursor-pointer transition-colors"
                 >
                   <Printer className="w-3.5 h-3.5 text-amber-500" />
@@ -1111,7 +1164,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <div className="flex items-center gap-2">
                 <Landmark className="w-4 h-4 text-amber-500" />
                 <h3 className="text-sm font-bold text-white font-display uppercase tracking-wider">
-                  Credenciar Nova Instituição Financeira / Banco Parceiro
+                  Credenciar Nova Financeira Parceira
                 </h3>
               </div>
               <span className="text-[11px] text-neutral-400">
@@ -1121,7 +1174,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
             <form onSubmit={handleAddFinancierSubmit} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <div>
-                <label className={formStyles.label}>Nome do Banco / Financeira *</label>
+                <label className={formStyles.label}>Nome da Financeira *</label>
                 <input
                   type="text"
                   required
@@ -1137,6 +1190,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <input
                   type="number"
                   step="0.01"
+                  min="0.1"
+                  max="50"
                   required
                   value={newFinTaxa}
                   onChange={(e) => setNewFinTaxa(Number(e.target.value))}
@@ -1148,6 +1203,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <label className={formStyles.label}>Telefone da Mesa</label>
                 <input
                   type="text"
+                  maxLength={15}
                   value={newFinTelefone}
                   onChange={(e) => setNewFinTelefone(maskPhone(e.target.value))}
                   placeholder="(83) 99876-5432"
@@ -1156,12 +1212,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               </div>
 
               <div>
-                <label className={formStyles.label}>Contato / Gerente</label>
+                <label className={formStyles.label}>Gerente de Contas</label>
                 <input
                   type="text"
                   value={newFinContato}
                   onChange={(e) => setNewFinContato(e.target.value)}
-                  placeholder="Ex: Mesa de Crédito / Patrícia"
+                  placeholder="Ex: Mesa de Crédito - Patrícia"
                   className={formStyles.input}
                 />
               </div>
@@ -1172,7 +1228,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   className="px-6 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-neutral-950 text-xs font-bold transition-colors cursor-pointer flex items-center gap-2 shadow-lg shadow-amber-500/10"
                 >
                   <Landmark className="w-4 h-4" />
-                  Credenciar Banco / Financeira
+                  Credenciar Financeira
                 </button>
               </div>
             </form>
@@ -1234,98 +1290,117 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </div>
 
             {/* Listagem */}
-            {filteredFinanciers.length === 0 ? (
+            {paginatedFinanciers.totalItems === 0 ? (
               <div className="p-8 text-center text-neutral-500 text-xs">
                 Nenhuma instituição financeira encontrada com os filtros selecionados.
               </div>
             ) : (
-              <div className="divide-y divide-neutral-800">
-                {filteredFinanciers.map((f) => {
-                  const isAtiva = f.ativa !== false && f.ativo !== false;
-                  return (
-                    <div 
-                      key={f.id} 
-                      className={`p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-colors ${
-                        isAtiva ? 'hover:bg-neutral-800/40' : 'bg-neutral-950/40 opacity-70 hover:opacity-100'
-                      }`}
-                    >
-                      <div className="flex items-start gap-3">
-                        <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 border ${
-                          isAtiva 
-                            ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' 
-                            : 'bg-neutral-800 text-neutral-500 border-neutral-700'
-                        }`}>
-                          <Landmark className="w-4 h-4" />
+              <div>
+                <div className="divide-y divide-neutral-800">
+                  {paginatedFinanciers.paginatedItems.map((f) => {
+                    const isAtiva = f.ativa !== false && f.ativo !== false;
+                    return (
+                      <div 
+                        key={f.id} 
+                        className={`p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-colors ${
+                          isAtiva ? 'hover:bg-neutral-800/40' : 'bg-neutral-950/40 opacity-70 hover:opacity-100'
+                        }`}
+                      >
+                        <div className="flex items-start gap-3">
+                          <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 border ${
+                            isAtiva 
+                              ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' 
+                              : 'bg-neutral-800 text-neutral-500 border-neutral-700'
+                          }`}>
+                            <Landmark className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-bold text-sm text-white">{f.nome}</span>
+                              {isAtiva ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                                  Ativa
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-red-500/10 text-red-400 border border-red-500/20">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
+                                  Desativada
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-xs text-neutral-400 mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5">
+                              <span>Mesa: <strong className="text-neutral-300">{f.contato || f.contatoGerente || 'Geral'}</strong></span>
+                              {f.telefone && <span>• Tel: <strong className="text-neutral-300">{f.telefone}</strong></span>}
+                              <span>• Taxa Média: <strong className="text-emerald-400 font-num">{f.taxaMedia || 1.49}% a.m.</strong></span>
+                            </div>
+                          </div>
                         </div>
-                        <div>
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-bold text-sm text-white">{f.nome}</span>
+
+                        {/* Botões de Ação: Alternar Status, Editar e Apagar */}
+                        <div className="flex items-center gap-2 self-end sm:self-center">
+                          <button
+                            type="button"
+                            onClick={() => handleToggleFinancierClick(f.id)}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer border ${
+                              isAtiva
+                                ? 'bg-neutral-800 hover:bg-amber-900/40 text-amber-300 hover:text-amber-200 border-neutral-700 hover:border-amber-700/50'
+                                : 'bg-emerald-950/40 hover:bg-emerald-900/60 text-emerald-300 border-emerald-800/50'
+                            }`}
+                            title={isAtiva ? 'Desativar financeira' : 'Ativar financeira'}
+                          >
                             {isAtiva ? (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                                Ativa
-                              </span>
+                              <>
+                                <PowerOff className="w-3.5 h-3.5" />
+                                <span>Desativar</span>
+                              </>
                             ) : (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-red-500/10 text-red-400 border border-red-500/20">
-                                <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
-                                Desativada
-                              </span>
+                              <>
+                                <Power className="w-3.5 h-3.5" />
+                                <span>Ativar</span>
+                              </>
                             )}
-                          </div>
-                          <div className="text-xs text-neutral-400 mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5">
-                            <span>Mesa: <strong className="text-neutral-300">{f.contato || f.contatoGerente || 'Geral'}</strong></span>
-                            {f.telefone && <span>• Tel: <strong className="text-neutral-300">{f.telefone}</strong></span>}
-                            <span>• Taxa Média: <strong className="text-emerald-400 font-num">{f.taxaMedia || 1.49}% a.m.</strong></span>
-                          </div>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setEditingFinancier(f)}
+                            className="p-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white border border-neutral-700 transition-colors cursor-pointer"
+                            title="Editar informações da financeira"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setDeleteFinancierConfirm(f)}
+                            className="p-1.5 rounded-lg bg-neutral-800 hover:bg-red-950/60 text-neutral-400 hover:text-red-400 border border-neutral-700 hover:border-red-800/60 transition-colors cursor-pointer"
+                            title="Apagar instituição financeira"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         </div>
                       </div>
+                    );
+                  })}
+                </div>
 
-                      {/* Botões de Ação: Ativar/Desativar, Editar e Apagar */}
-                      <div className="flex items-center gap-2 self-end sm:self-center">
-                        <button
-                          type="button"
-                          onClick={() => handleToggleFinancierClick(f.id)}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer border ${
-                            isAtiva
-                              ? 'bg-neutral-800 hover:bg-amber-900/40 text-amber-300 hover:text-amber-200 border-neutral-700 hover:border-amber-700/50'
-                              : 'bg-emerald-950/40 hover:bg-emerald-900/60 text-emerald-300 border-emerald-800/50'
-                          }`}
-                          title={isAtiva ? 'Desativar financeira' : 'Ativar financeira'}
-                        >
-                          {isAtiva ? (
-                            <>
-                              <PowerOff className="w-3.5 h-3.5" />
-                              <span>Desativar</span>
-                            </>
-                          ) : (
-                            <>
-                              <Power className="w-3.5 h-3.5" />
-                              <span>Ativar</span>
-                            </>
-                          )}
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => setEditingFinancier(f)}
-                          className="p-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white border border-neutral-700 transition-colors cursor-pointer"
-                          title="Editar informações da financeira"
-                        >
-                          <Edit3 className="w-3.5 h-3.5" />
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => setDeleteFinancierConfirm(f)}
-                          className="p-1.5 rounded-lg bg-neutral-800 hover:bg-red-950/60 text-neutral-400 hover:text-red-400 border border-neutral-700 hover:border-red-800/60 transition-colors cursor-pointer"
-                          title="Apagar instituição financeira"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
+                {paginatedFinanciers.totalItems > 0 && (
+                  <div className="p-3 border-t border-neutral-800">
+                    <PaginationControls
+                      currentPage={paginatedFinanciers.currentPage}
+                      totalPages={paginatedFinanciers.totalPages}
+                      totalItems={paginatedFinanciers.totalItems}
+                      pageSize={paginatedFinanciers.pageSize}
+                      onPageChange={paginatedFinanciers.goToPage}
+                      onPageSizeChange={paginatedFinanciers.changePageSize}
+                      pageSizeOptions={[5, 10, 20]}
+                      isCached={paginatedFinanciers.isCurrentPageCached}
+                      isLoading={paginatedFinanciers.isLoading}
+                      itemLabel="financeiras"
+                    />
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -1341,7 +1416,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <div className="flex items-center gap-2">
                 <Users className="w-4 h-4 text-amber-500" />
                 <h3 className="text-sm font-bold text-white font-display uppercase tracking-wider">
-                  Cadastrar Novo Consultor / Vendedor
+                  Cadastrar Novo Vendedor
                 </h3>
               </div>
               <span className="text-[11px] text-neutral-400">
@@ -1377,6 +1452,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <label className={formStyles.label}>WhatsApp (DDD 83)</label>
                 <input
                   type="text"
+                  maxLength={15}
                   value={newSellerTelefone}
                   onChange={(e) => setNewSellerTelefone(maskPhone(e.target.value))}
                   placeholder="(83) 98111-2233"
@@ -1465,98 +1541,117 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </div>
 
             {/* Listagem */}
-            {filteredSalespeople.length === 0 ? (
+            {paginatedSalespeople.totalItems === 0 ? (
               <div className="p-8 text-center text-neutral-500 text-xs">
                 Nenhum membro da equipe encontrado com os filtros selecionados.
               </div>
             ) : (
-              <div className="divide-y divide-neutral-800">
-                {filteredSalespeople.map((s) => {
-                  const isAtivo = s.ativo !== false;
-                  return (
-                    <div 
-                      key={s.id} 
-                      className={`p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-colors ${
-                        isAtivo ? 'hover:bg-neutral-800/40' : 'bg-neutral-950/40 opacity-70 hover:opacity-100'
-                      }`}
-                    >
-                      <div className="flex items-start gap-3">
-                        <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 border font-bold text-xs ${
-                          isAtivo 
-                            ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' 
-                            : 'bg-neutral-800 text-neutral-500 border-neutral-700'
-                        }`}>
-                          {s.nome.slice(0, 2).toUpperCase()}
+              <div>
+                <div className="divide-y divide-neutral-800">
+                  {paginatedSalespeople.paginatedItems.map((s) => {
+                    const isAtivo = s.ativo !== false;
+                    return (
+                      <div 
+                        key={s.id} 
+                        className={`p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-colors ${
+                          isAtivo ? 'hover:bg-neutral-800/40' : 'bg-neutral-950/40 opacity-70 hover:opacity-100'
+                        }`}
+                      >
+                        <div className="flex items-start gap-3">
+                          <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 border font-bold text-xs ${
+                            isAtivo 
+                              ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' 
+                              : 'bg-neutral-800 text-neutral-500 border-neutral-700'
+                          }`}>
+                            {s.nome.slice(0, 2).toUpperCase()}
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-bold text-sm text-white">{s.nome}</span>
+                              {isAtivo ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                                  Ativo na Loja
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-red-500/10 text-red-400 border border-red-500/20">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
+                                  Desativado
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-xs text-neutral-400 mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5">
+                              <span>E-mail: <strong className="text-neutral-300">{s.email}</strong></span>
+                              {s.telefone && <span>• Fone: <strong className="text-neutral-300">{s.telefone}</strong></span>}
+                              <span>• Meta: <strong className="text-amber-400 font-num">{s.metaMensal || 5} veículos por mês</strong></span>
+                            </div>
+                          </div>
                         </div>
-                        <div>
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-bold text-sm text-white">{s.nome}</span>
+
+                        {/* Botões de Ação: Alternar Status, Editar e Apagar */}
+                        <div className="flex items-center gap-2 self-end sm:self-center">
+                          <button
+                            type="button"
+                            onClick={() => handleToggleSalespersonClick(s.id)}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer border ${
+                              isAtivo
+                                ? 'bg-neutral-800 hover:bg-amber-900/40 text-amber-300 hover:text-amber-200 border-neutral-700 hover:border-amber-700/50'
+                                : 'bg-emerald-950/40 hover:bg-emerald-900/60 text-emerald-300 border-emerald-800/50'
+                            }`}
+                            title={isAtivo ? 'Desativar vendedor' : 'Ativar vendedor'}
+                          >
                             {isAtivo ? (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                                Ativo na Loja
-                              </span>
+                              <>
+                                <PowerOff className="w-3.5 h-3.5" />
+                                <span>Desativar</span>
+                              </>
                             ) : (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-red-500/10 text-red-400 border border-red-500/20">
-                                <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
-                                Desativado
-                              </span>
+                              <>
+                                <Power className="w-3.5 h-3.5" />
+                                <span>Ativar</span>
+                              </>
                             )}
-                          </div>
-                          <div className="text-xs text-neutral-400 mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5">
-                            <span>E-mail: <strong className="text-neutral-300">{s.email}</strong></span>
-                            {s.telefone && <span>• Fone: <strong className="text-neutral-300">{s.telefone}</strong></span>}
-                            <span>• Meta: <strong className="text-amber-400 font-num">{s.metaMensal || 5} veículos/mês</strong></span>
-                          </div>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setEditingSalesperson(s)}
+                            className="p-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white border border-neutral-700 transition-colors cursor-pointer"
+                            title="Editar dados do vendedor"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setDeleteSalespersonConfirm(s)}
+                            className="p-1.5 rounded-lg bg-neutral-800 hover:bg-red-950/60 text-neutral-400 hover:text-red-400 border border-neutral-700 hover:border-red-800/60 transition-colors cursor-pointer"
+                            title="Apagar membro da equipe"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         </div>
                       </div>
+                    );
+                  })}
+                </div>
 
-                      {/* Botões de Ação: Ativar/Desativar, Editar e Apagar */}
-                      <div className="flex items-center gap-2 self-end sm:self-center">
-                        <button
-                          type="button"
-                          onClick={() => handleToggleSalespersonClick(s.id)}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer border ${
-                            isAtivo
-                              ? 'bg-neutral-800 hover:bg-amber-900/40 text-amber-300 hover:text-amber-200 border-neutral-700 hover:border-amber-700/50'
-                              : 'bg-emerald-950/40 hover:bg-emerald-900/60 text-emerald-300 border-emerald-800/50'
-                          }`}
-                          title={isAtivo ? 'Desativar vendedor' : 'Ativar vendedor'}
-                        >
-                          {isAtivo ? (
-                            <>
-                              <PowerOff className="w-3.5 h-3.5" />
-                              <span>Desativar</span>
-                            </>
-                          ) : (
-                            <>
-                              <Power className="w-3.5 h-3.5" />
-                              <span>Ativar</span>
-                            </>
-                          )}
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => setEditingSalesperson(s)}
-                          className="p-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white border border-neutral-700 transition-colors cursor-pointer"
-                          title="Editar dados do vendedor"
-                        >
-                          <Edit3 className="w-3.5 h-3.5" />
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => setDeleteSalespersonConfirm(s)}
-                          className="p-1.5 rounded-lg bg-neutral-800 hover:bg-red-950/60 text-neutral-400 hover:text-red-400 border border-neutral-700 hover:border-red-800/60 transition-colors cursor-pointer"
-                          title="Apagar membro da equipe"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
+                {paginatedSalespeople.totalItems > 0 && (
+                  <div className="p-3 border-t border-neutral-800">
+                    <PaginationControls
+                      currentPage={paginatedSalespeople.currentPage}
+                      totalPages={paginatedSalespeople.totalPages}
+                      totalItems={paginatedSalespeople.totalItems}
+                      pageSize={paginatedSalespeople.pageSize}
+                      onPageChange={paginatedSalespeople.goToPage}
+                      onPageSizeChange={paginatedSalespeople.changePageSize}
+                      pageSizeOptions={[5, 10, 20]}
+                      isCached={paginatedSalespeople.isCurrentPageCached}
+                      isLoading={paginatedSalespeople.isLoading}
+                      itemLabel="consultores"
+                    />
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -1619,7 +1714,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               </div>
 
               <div>
-                <label className={formStyles.label}>Contato do Gerente / Mesa</label>
+                <label className={formStyles.label}>Contato do Gerente</label>
                 <input
                   type="text"
                   value={editingFinancier.contato || editingFinancier.contatoGerente || ''}
@@ -1709,7 +1804,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         </div>
       )}
 
-      {/* MODAL 3: Editar Membro da Equipe / Vendedor */}
+      {/* MODAL 3: Editar Consultor de Vendas */}
       {editingSalesperson && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4">
@@ -1762,7 +1857,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   />
                 </div>
                 <div>
-                  <label className={formStyles.label}>Meta (Veículos/mês)</label>
+                  <label className={formStyles.label}>Meta Mensal (Veículos)</label>
                   <input
                     type="number"
                     min={1}

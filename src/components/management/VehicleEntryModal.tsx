@@ -10,7 +10,8 @@ import {
 } from '../../types';
 import { 
   formatCurrency, maskCurrency, unmaskCurrency, 
-  maskCPF, maskPhone, maskCEP, maskPlate, maskRenavam, isValidCPF 
+  maskCPF, maskPhone, maskCEP, maskPlate, maskRenavam, 
+  isValidCPF, isValidPhone, isValidCEP, isValidPlate, isValidRenavam, isValidYear 
 } from '../../utils/formatters';
 import { compressMultipleImages } from '../../utils/imageCompressor';
 
@@ -105,9 +106,24 @@ export const VehicleEntryModal: React.FC<VehicleEntryModalProps> = ({
     }
   };
 
+  const isValidHttpsUrl = (urlStr: string): boolean => {
+    try {
+      const parsed = new URL(urlStr);
+      return parsed.protocol === 'https:';
+    } catch {
+      return false;
+    }
+  };
+
   const handleAddPhotoUrl = () => {
-    if (fotoUrl.trim() && fotosList.length < 10) {
-      setFotosList([...fotosList, fotoUrl.trim()]);
+    const trimmed = fotoUrl.trim();
+    if (!trimmed) return;
+    if (!isValidHttpsUrl(trimmed)) {
+      alert('Por motivos de segurança, informe uma URL de imagem válida com protocolo seguro (https://).');
+      return;
+    }
+    if (fotosList.length < 10) {
+      setFotosList([...fotosList, trimmed]);
       setFotoUrl('');
     }
   };
@@ -128,6 +144,14 @@ export const VehicleEntryModal: React.FC<VehicleEntryModalProps> = ({
       }
       if (!isValidCPF(newOwner.cpf)) {
         alert('O CPF do antigo dono é inválido.');
+        return;
+      }
+      if (newOwner.telefone && !isValidPhone(newOwner.telefone)) {
+        alert('Por favor, informe um WhatsApp válido com DDD (10 ou 11 dígitos) para o antigo dono.');
+        return;
+      }
+      if (newOwner.cep && !isValidCEP(newOwner.cep)) {
+        alert('Por favor, informe um CEP válido com 8 dígitos para o antigo dono.');
         return;
       }
       const createdOwner: FormerOwner = {
@@ -158,6 +182,31 @@ export const VehicleEntryModal: React.FC<VehicleEntryModalProps> = ({
       return;
     }
 
+    if (!isValidPlate(placa)) {
+      alert('Por favor, informe uma placa veicular válida no formato Mercosul (ABC1D23) ou Tradicional (ABC-1234).');
+      return;
+    }
+
+    if (renavam && !isValidRenavam(renavam)) {
+      alert('O RENAVAM deve conter exatamente 11 dígitos numéricos.');
+      return;
+    }
+
+    if (!isValidYear(anoFabricacao)) {
+      alert('Informe um Ano de Fabricação válido de 4 dígitos (entre 1900 e o ano atual).');
+      return;
+    }
+
+    if (!isValidYear(anoModelo)) {
+      alert('Informe um Ano Modelo válido de 4 dígitos.');
+      return;
+    }
+
+    if (isNaN(Number(quilometragem)) || Number(quilometragem) < 0) {
+      alert('Informe uma quilometragem válida (número positivo).');
+      return;
+    }
+
     const cleanInputPlate = placa.toUpperCase().replace(/[^A-Z0-9]/g, '');
     const isDuplicatePlate = (vehicles || []).some(v => 
       v.status === 'em_estoque' && 
@@ -172,6 +221,21 @@ export const VehicleEntryModal: React.FC<VehicleEntryModalProps> = ({
     const valorPagoNum = unmaskCurrency(valorPagoStr);
     const valorAnunciadoNum = unmaskCurrency(valorAnunciadoStr);
     const valorDebitoNum = unmaskCurrency(valorDebitoStr);
+
+    if (isNaN(valorPagoNum) || valorPagoNum <= 0) {
+      alert('Informe um valor pago pela loja válido maior que zero.');
+      return;
+    }
+
+    if (isNaN(valorAnunciadoNum) || valorAnunciadoNum <= 0) {
+      alert('Informe um valor anunciado para a vitrine válido maior que zero.');
+      return;
+    }
+
+    if (temDebito && (isNaN(valorDebitoNum) || valorDebitoNum <= 0)) {
+      alert('Informe o valor do débito do DETRAN maior que zero.');
+      return;
+    }
 
     const debitoData: DetranDebt = {
       temDebito,
@@ -256,7 +320,7 @@ export const VehicleEntryModal: React.FC<VehicleEntryModalProps> = ({
             <div className="flex items-center justify-between">
               <h4 className="text-xs font-bold text-amber-400 uppercase tracking-wider flex items-center gap-2">
                 <UserPlus className="w-4 h-4" />
-                1. Antigo Proprietário / Origem do Veículo
+                1. Antigo Proprietário do Veículo
               </h4>
 
               <button
@@ -302,6 +366,7 @@ export const VehicleEntryModal: React.FC<VehicleEntryModalProps> = ({
                   <input
                     type="text"
                     required
+                    maxLength={14}
                     value={newOwner.cpf}
                     onChange={(e) => setNewOwner({ ...newOwner, cpf: maskCPF(e.target.value) })}
                     placeholder="000.000.000-00"
@@ -313,18 +378,20 @@ export const VehicleEntryModal: React.FC<VehicleEntryModalProps> = ({
                   <label className="text-xs text-neutral-400 block mb-1">RG</label>
                   <input
                     type="text"
+                    maxLength={20}
                     value={newOwner.rg}
                     onChange={(e) => setNewOwner({ ...newOwner, rg: e.target.value })}
-                    placeholder="Ex: 2.345.678 SSP/PB"
+                    placeholder="Ex: 2.345.678 SSP-PB"
                     className="w-full bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 text-xs text-white focus:border-amber-500 focus:outline-none"
                   />
                 </div>
 
                 <div>
-                  <label className="text-xs text-neutral-400 block mb-1">Telefone / WhatsApp (DDD 83) *</label>
+                  <label className="text-xs text-neutral-400 block mb-1">WhatsApp (DDD 83) *</label>
                   <input
                     type="text"
                     required
+                    maxLength={15}
                     value={newOwner.telefone}
                     onChange={(e) => setNewOwner({ ...newOwner, telefone: maskPhone(e.target.value) })}
                     placeholder="(83) 98765-4321"
@@ -336,6 +403,7 @@ export const VehicleEntryModal: React.FC<VehicleEntryModalProps> = ({
                   <label className="text-xs text-neutral-400 block mb-1">CEP</label>
                   <input
                     type="text"
+                    maxLength={9}
                     value={newOwner.cep}
                     onChange={(e) => setNewOwner({ ...newOwner, cep: maskCEP(e.target.value) })}
                     placeholder="58140-000"
@@ -344,7 +412,7 @@ export const VehicleEntryModal: React.FC<VehicleEntryModalProps> = ({
                 </div>
 
                 <div>
-                  <label className="text-xs text-neutral-400 block mb-1">Cidade / Estado</label>
+                  <label className="text-xs text-neutral-400 block mb-1">Cidade e UF</label>
                   <div className="flex gap-1.5">
                     <input
                       type="text"
@@ -426,7 +494,7 @@ export const VehicleEntryModal: React.FC<VehicleEntryModalProps> = ({
               </div>
 
               <div>
-                <label className="text-xs text-neutral-400 block mb-1">Versão / Motor</label>
+                <label className="text-xs text-neutral-400 block mb-1">Versão e Motorização</label>
                 <input
                   type="text"
                   value={versao}
@@ -441,6 +509,8 @@ export const VehicleEntryModal: React.FC<VehicleEntryModalProps> = ({
                 <div className="flex gap-1.5">
                   <input
                     type="number"
+                    min={1900}
+                    max={2050}
                     value={anoFabricacao}
                     onChange={(e) => setAnoFabricacao(Number(e.target.value))}
                     className="w-full bg-neutral-900 border border-neutral-700 rounded-lg px-2 py-2 text-xs text-white focus:border-amber-500 focus:outline-none text-center"
@@ -448,6 +518,8 @@ export const VehicleEntryModal: React.FC<VehicleEntryModalProps> = ({
                   <span className="self-center text-neutral-500">/</span>
                   <input
                     type="number"
+                    min={1900}
+                    max={2050}
                     value={anoModelo}
                     onChange={(e) => setAnoModelo(Number(e.target.value))}
                     className="w-full bg-neutral-900 border border-neutral-700 rounded-lg px-2 py-2 text-xs text-white focus:border-amber-500 focus:outline-none text-center"
@@ -483,17 +555,20 @@ export const VehicleEntryModal: React.FC<VehicleEntryModalProps> = ({
                 <label className="text-xs text-neutral-400 block mb-1">KM Atual</label>
                 <input
                   type="number"
+                  min={0}
+                  max={2000000}
                   value={quilometragem}
-                  onChange={(e) => setQuilometragem(Number(e.target.value))}
+                  onChange={(e) => setQuilometragem(Math.max(0, Number(e.target.value)))}
                   className="w-full bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 text-xs text-white focus:border-amber-500 focus:outline-none"
                 />
               </div>
 
               <div>
-                <label className="text-xs text-neutral-400 block mb-1">Placa (Mercosul/Antiga) *</label>
+                <label className="text-xs text-neutral-400 block mb-1">Placa do Veículo *</label>
                 <input
                   type="text"
                   required
+                  maxLength={8}
                   value={placa}
                   onChange={(e) => setPlaca(maskPlate(e.target.value))}
                   placeholder="ABC-1234 ou ABC1D23"
@@ -505,8 +580,9 @@ export const VehicleEntryModal: React.FC<VehicleEntryModalProps> = ({
                 <label className="text-xs text-neutral-400 block mb-1">Chassi</label>
                 <input
                   type="text"
+                  maxLength={17}
                   value={chassi}
-                  onChange={(e) => setChassi(e.target.value)}
+                  onChange={(e) => setChassi(e.target.value.toUpperCase())}
                   placeholder="17 dígitos"
                   className="w-full bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 text-xs text-white uppercase focus:border-amber-500 focus:outline-none font-mono"
                 />
@@ -516,6 +592,7 @@ export const VehicleEntryModal: React.FC<VehicleEntryModalProps> = ({
                 <label className="text-xs text-neutral-400 block mb-1">RENAVAM (11 dígitos)</label>
                 <input
                   type="text"
+                  maxLength={11}
                   value={renavam}
                   onChange={(e) => setRenavam(maskRenavam(e.target.value))}
                   placeholder="11 dígitos numéricos"
@@ -548,7 +625,7 @@ export const VehicleEntryModal: React.FC<VehicleEntryModalProps> = ({
                     : 'bg-neutral-800 hover:bg-neutral-700 text-white border border-neutral-700'
                 }`}>
                   <Upload className="w-4 h-4 text-amber-500" />
-                  {isUploadingPhotos ? 'Comprimindo fotos...' : 'Selecionar Fotos do Computador/Celular'}
+                  {isUploadingPhotos ? 'Comprimindo fotos...' : 'Selecionar Fotos do Dispositivo'}
                   <input
                     type="file"
                     multiple
@@ -628,7 +705,7 @@ export const VehicleEntryModal: React.FC<VehicleEntryModalProps> = ({
                   className="w-full bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 text-xs font-semibold text-white focus:border-amber-500 focus:outline-none"
                 >
                   <option value="venda">Venda com Garantia Legal (Revisado)</option>
-                  <option value="repasse">Repasse (Sem Garantia / No Estado)</option>
+                  <option value="repasse">Repasse (Sem Garantia)</option>
                 </select>
                 <span className="text-[10px] text-neutral-500 block mt-1">
                   {categoriaComercial === 'repasse' ? 'Sem garantia mecânica no atacado' : 'Garantia legal de 90 dias motor e câmbio'}
@@ -687,7 +764,7 @@ export const VehicleEntryModal: React.FC<VehicleEntryModalProps> = ({
                       className="w-full bg-neutral-950 border border-neutral-700 rounded-lg px-3 py-2 text-xs font-semibold text-white focus:border-amber-500 focus:outline-none"
                     >
                       <option value="loja">A Loja Assume (Soma no Custo do Carro)</option>
-                      <option value="antigo_dono">O Antigo Dono Arca (Descontado/Quitado)</option>
+                      <option value="antigo_dono">O Antigo Dono Arca (Quitado)</option>
                     </select>
                   </div>
 

@@ -49,23 +49,51 @@
 }
 
 @media print {
-  body * {
-    visibility: hidden;
+  @page {
+    size: A4 portrait;
+    margin: 15mm 18mm 15mm 18mm;
   }
-  #printable-document, #printable-document * {
-    visibility: visible;
+
+  html, body {
+    background: #ffffff !important;
+    color: #111827 !important;
+    height: auto !important;
+    min-height: auto !important;
+    overflow: visible !important;
   }
-  #printable-document {
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 100%;
-    margin: 0;
-    padding: 24px;
-    background: white !important;
-    color: black !important;
-  }
-  .no-print {
+
+  /* Oculta navegacao e botoes interativos */
+  nav, aside, header, footer, button, .no-print {
     display: none !important;
+  }
+
+  /* Desfaz posicoes fixas e restricoes de overflow do modal para permitir paginacao correta */
+  .fixed, [class*="fixed"] {
+    position: static !important;
+    background: transparent !important;
+    padding: 0 !important;
+    overflow: visible !important;
+    height: auto !important;
+    max-height: none !important;
+  }
+
+  [class*="overflow-y-auto"], [class*="overflow-hidden"], [class*="max-h-"] {
+    overflow: visible !important;
+    max-height: none !important;
+    height: auto !important;
+    box-shadow: none !important;
+    border: none !important;
+  }
+
+  #printable-document, #documents-view-sheet, #letterhead-test-sheet {
+    box-shadow: none !important;
+    border: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    background: #ffffff !important;
+    color: #111827 !important;
+    min-height: auto !important;
   }
 }

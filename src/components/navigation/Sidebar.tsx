@@ -3,7 +3,7 @@ import {
   LayoutDashboard, Car, Users, ShoppingCart, ShieldAlert,
   DollarSign, Clock, FileText, Settings, ExternalLink,
   ChevronLeft, ChevronRight, UserCheck, ShieldCheck,
-  X, History
+  X, History, LogOut
 } from 'lucide-react';
 import { UserRole, Salesperson, StoreProfile } from '../../types';
 import { BrandLogo } from '../common/BrandLogo';
@@ -19,6 +19,8 @@ interface SidebarProps {
   onOpenShowroom: () => void;
   userRole: UserRole;
   setUserRole: (role: UserRole) => void;
+  onRequestElevateToGestor?: () => void;
+  onLogout?: () => void;
   activeSeller: Salesperson | null;
   setActiveSeller: (seller: Salesperson) => void;
   salespeople: Salesperson[];
@@ -49,6 +51,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onOpenShowroom,
   userRole,
   setUserRole,
+  onRequestElevateToGestor,
+  onLogout,
   activeSeller,
   setActiveSeller,
   salespeople,
@@ -82,7 +86,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       ]
     },
     {
-      title: 'FINANCEIRO & AUDITORIA',
+      title: userRole === 'gestor' ? 'FINANCEIRO & AUDITORIA' : 'FINANCEIRO',
       items: [
         { id: 'financial', label: 'Financeiro', icon: DollarSign },
         { 
@@ -91,7 +95,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
           icon: Clock,
           badge: pendingCommissionsCount > 0 ? pendingCommissionsCount : undefined
         },
-        { id: 'audit_logs', label: 'Log Geral', icon: ShieldAlert }
+        ...(userRole === 'gestor' ? [
+          { id: 'audit_logs', label: 'Log Geral', icon: ShieldAlert }
+        ] : [])
       ]
     },
     {
@@ -101,7 +107,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
       ]
     },
     {
+      title: 'GESTÃO & EQUIPE',
       items: [
+        ...(userRole === 'gestor' ? [
+          { id: 'users', label: 'Usuários & Equipe', icon: UserCheck }
+        ] : []),
         { id: 'settings', label: 'Configurações', icon: Settings }
       ]
     }
@@ -258,7 +268,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <div className="grid grid-cols-2 gap-1 bg-[#202024] p-0.5 rounded-[6px]">
               <button
                 type="button"
-                onClick={() => setUserRole('gestor')}
+                onClick={() => {
+                  if (userRole !== 'gestor' && onRequestElevateToGestor) {
+                    onRequestElevateToGestor();
+                  } else {
+                    setUserRole('gestor');
+                  }
+                }}
                 className={`py-1 text-[11px] font-medium rounded transition-colors ${
                   userRole === 'gestor' ? 'bg-[#D4130D] text-white font-bold shadow-sm' : 'text-[#A7A7AB] hover:text-[#F5F5F5]'
                 }`}
@@ -299,7 +315,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
         ) : (
           <div className="flex justify-center">
             <button
-              onClick={() => setUserRole(userRole === 'gestor' ? 'vendedor' : 'gestor')}
+              onClick={() => {
+                if (userRole === 'vendedor') {
+                  if (onRequestElevateToGestor) onRequestElevateToGestor();
+                  else setUserRole('gestor');
+                } else {
+                  setUserRole('vendedor');
+                  if (!activeSeller && salespeople.length > 0) setActiveSeller(salespeople[0]);
+                }
+              }}
               className="w-8 h-8 rounded-full bg-[#17171A] border border-[#2D2D32] flex items-center justify-center text-[#CAC9CA] hover:text-[#F5F5F5]"
               title={`Perfil: ${userRole === 'gestor' ? 'Gestor' : 'Vendedor'}. Clique para alternar.`}
             >
@@ -312,7 +336,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
         )}
 
-        {/* Desktop Quick Collapse/Expand Button */}
+        {/* Botão Encerrar Sessão */}
+        {onLogout && (
+          <button
+            type="button"
+            onClick={onLogout}
+            className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-[8px] text-xs font-medium text-[#F43F5E] hover:text-white bg-[#17171A] hover:bg-[#F43F5E]/20 border border-[#2D2D32] hover:border-[#F43F5E]/40 transition-colors cursor-pointer ${
+              isCollapsed ? 'justify-center' : ''
+            }`}
+            title="Encerrar Sessão do Sistema"
+          >
+            <LogOut className="w-3.5 h-3.5 shrink-0" />
+            {!isCollapsed && <span>Encerrar Sessão</span>}
+          </button>
+        )}
+
+        {/* Botão de Recolher/Expandir Barra Lateral */}
         <button
           type="button"
           onClick={toggleCollapse}

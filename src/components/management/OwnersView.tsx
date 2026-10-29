@@ -5,7 +5,7 @@ import {
   ArrowUpRight, Clock, Plus, X, ShieldCheck
 } from 'lucide-react';
 import { FormerOwner, Vehicle, Sale } from '../../types';
-import { formatCurrency, formatDate } from '../../utils/formatters';
+import { formatCurrency, formatDate, maskCPF, maskPhone, isValidCPF, isValidPhone } from '../../utils/formatters';
 import { PageHeader, KpiCard, StatusBadge, formStyles } from '../common/DesignSystem';
 
 interface OwnersViewProps {
@@ -45,18 +45,28 @@ export const OwnersView: React.FC<OwnersViewProps> = ({
 
   const handleCreateOwner = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!nome || !cpf || !endereco) {
+    if (!nome.trim() || !cpf.trim() || !endereco.trim()) {
       alert('Preencha os campos obrigatórios: Nome Completo, CPF e Endereço.');
+      return;
+    }
+
+    if (!isValidCPF(cpf)) {
+      alert('Por favor, informe um CPF válido com 11 dígitos.');
+      return;
+    }
+
+    if (telefone && !isValidPhone(telefone)) {
+      alert('Por favor, informe um WhatsApp válido com DDD (10 ou 11 dígitos).');
       return;
     }
 
     const newOwner: FormerOwner = {
       id: 'owner_' + Date.now(),
-      nome,
-      cpf,
-      telefone: telefone || '(11) 99999-0000',
-      endereco,
-      observacoes: observacoes || undefined,
+      nome: nome.trim(),
+      cpf: maskCPF(cpf),
+      telefone: telefone ? maskPhone(telefone) : '(83) 99999-0000',
+      endereco: endereco.trim(),
+      observacoes: observacoes ? observacoes.trim() : undefined,
       dataCadastro: new Date().toISOString()
     };
 
@@ -109,7 +119,7 @@ export const OwnersView: React.FC<OwnersViewProps> = ({
         />
       </div>
 
-      {/* 3. Modal / Drawer de Cadastro de Pessoa */}
+      {/* 3. Modal de Cadastro de Pessoa */}
       {isAddingOwner && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs">
           <div className="w-full max-w-xl bg-[#17171A] border border-[#2D2D32] rounded-[12px] shadow-2xl overflow-hidden animate-in fade-in-50">
@@ -117,7 +127,7 @@ export const OwnersView: React.FC<OwnersViewProps> = ({
               <div className="flex items-center gap-2">
                 <UserPlus className="w-4 h-4 text-[#D4130D]" />
                 <h3 className="text-sm font-bold text-[#F5F5F5] font-display uppercase tracking-wider">
-                  Cadastrar Nova Pessoa / Fornecedor
+                  Cadastrar Nova Pessoa
                 </h3>
               </div>
               <button
@@ -148,21 +158,23 @@ export const OwnersView: React.FC<OwnersViewProps> = ({
                     <input
                       type="text"
                       required
+                      maxLength={14}
                       value={cpf}
-                      onChange={(e) => setCpf(e.target.value)}
+                      onChange={(e) => setCpf(maskCPF(e.target.value))}
                       placeholder="000.000.000-00"
-                      className={formStyles.input}
+                      className={`${formStyles.input} font-mono`}
                     />
                   </div>
 
                   <div>
-                    <label className={formStyles.label}>Telefone / WhatsApp</label>
+                    <label className={formStyles.label}>WhatsApp</label>
                     <input
                       type="text"
+                      maxLength={15}
                       value={telefone}
-                      onChange={(e) => setTelefone(e.target.value)}
-                      placeholder="(11) 98765-4321"
-                      className={formStyles.input}
+                      onChange={(e) => setTelefone(maskPhone(e.target.value))}
+                      placeholder="(83) 98765-4321"
+                      className={`${formStyles.input} font-mono`}
                     />
                   </div>
                 </div>

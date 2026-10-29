@@ -28,7 +28,7 @@ export const AVAILABLE_MERGE_TAGS: MergeTagInfo[] = [
   { tag: '{veiculo_marca}', label: 'Marca do Veículo', exemplo: 'Toyota' },
   { tag: '{veiculo_modelo}', label: 'Modelo do Veículo', exemplo: 'Corolla' },
   { tag: '{veiculo_versao}', label: 'Versão do Veículo', exemplo: 'XEi 2.0 Flex' },
-  { tag: '{veiculo_ano}', label: 'Ano Fabricação/Modelo', exemplo: '2023/2024' },
+  { tag: '{veiculo_ano}', label: 'Ano Modelo', exemplo: '2023/2024' },
   { tag: '{veiculo_cor}', label: 'Cor do Veículo', exemplo: 'Prata' },
   { tag: '{veiculo_placa}', label: 'Placa do Veículo', exemplo: 'ABC1D23' },
   { tag: '{veiculo_chassi}', label: 'Chassi do Veículo', exemplo: '9BRBL42E0P0123456' },
@@ -39,7 +39,7 @@ export const AVAILABLE_MERGE_TAGS: MergeTagInfo[] = [
   // Antigo Dono / Vendedor para a Loja
   { tag: '{proprietario_nome}', label: 'Nome do Antigo Dono', exemplo: 'João Pereira da Silva' },
   { tag: '{proprietario_cpf}', label: 'CPF do Antigo Dono', exemplo: '123.456.789-00' },
-  { tag: '{proprietario_rg}', label: 'RG do Antigo Dono', exemplo: '1.234.567 SSP/PB' },
+  { tag: '{proprietario_rg}', label: 'RG do Antigo Dono', exemplo: '1.234.567 SSP-PB' },
   { tag: '{proprietario_telefone}', label: 'Telefone do Antigo Dono', exemplo: '(83) 99123-4567' },
   { tag: '{proprietario_endereco}', label: 'Endereço do Antigo Dono', exemplo: 'Rua Central, 50 - Areial - PB' },
   { tag: '{valor_compra}', label: 'Valor Pago pela Loja (R$)', exemplo: 'R$ 85.000,00' },
@@ -48,12 +48,12 @@ export const AVAILABLE_MERGE_TAGS: MergeTagInfo[] = [
   // Comprador
   { tag: '{comprador_nome}', label: 'Nome do Comprador', exemplo: 'Maria Fernandes de Lima' },
   { tag: '{comprador_cpf}', label: 'CPF do Comprador', exemplo: '987.654.321-99' },
-  { tag: '{comprador_rg}', label: 'RG do Comprador', exemplo: '3.456.789 SSP/PB' },
+  { tag: '{comprador_rg}', label: 'RG do Comprador', exemplo: '3.456.789 SSP-PB' },
   { tag: '{comprador_telefone}', label: 'Telefone do Comprador', exemplo: '(83) 99876-5432' },
   { tag: '{comprador_endereco}', label: 'Endereço do Comprador', exemplo: 'Av. Brasil, 200 - Esperança - PB' },
   { tag: '{valor_venda}', label: 'Valor da Venda (R$)', exemplo: 'R$ 95.000,00' },
   { tag: '{valor_venda_extenso}', label: 'Valor da Venda por Extenso', exemplo: 'noventa e cinco mil reais' },
-  { tag: '{forma_pagamento}', label: 'Forma de Pagamento', exemplo: 'À vista via Pix/TED' },
+  { tag: '{forma_pagamento}', label: 'Forma de Pagamento', exemplo: 'À vista via Pix' },
   { tag: '{vendedor_responsavel}', label: 'Vendedor Responsável', exemplo: 'Carlos Ramos' },
   
   // Datas e Geral
@@ -96,7 +96,7 @@ export function renderTemplate(templateContent: string, context: MergeContext): 
   replaceTag(['{VEICULO_RENAVAM}', '{veiculo_renavam}'], vehicle.renavam || '');
   replaceTag(['{VEICULO_KM}', '{veiculo_km}'], vehicle.quilometragem ? new Intl.NumberFormat('pt-BR').format(vehicle.quilometragem) : '0');
   replaceTag(['{VEICULO_COMBUSTIVEL}', '{veiculo_combustivel}'], vehicle.combustivel || 'Flex');
-  replaceTag(['{CATEGORIA_COMERCIAL}', '{categoria_comercial}'], vehicle.categoriaComercial === 'repasse' ? 'REPASSE (Sem Garantia / No Estado)' : 'VENDA (Com Garantia Legal)');
+  replaceTag(['{CATEGORIA_COMERCIAL}', '{categoria_comercial}'], vehicle.categoriaComercial === 'repasse' ? 'REPASSE (Sem Garantia)' : 'VENDA (Com Garantia Legal)');
 
   // ANTIGO DONO
   if (owner) {
@@ -118,7 +118,7 @@ export function renderTemplate(templateContent: string, context: MergeContext): 
   if (vehicle.debitoDetran?.temDebito) {
     quemArcaTexto = vehicle.debitoDetran.quemArca === 'loja' 
       ? 'A LOJA assumiu o débito e arcará com o pagamento perante o DETRAN'
-      : 'O VENDEDOR/ANTIGO DONO assume a responsabilidade e quitou/descontou o débito';
+      : 'O ANTIGO PROPRIETÁRIO assume a responsabilidade e quitou o débito';
   }
   replaceTag(['{QUEM_ARCA_DEBITO}'], quemArcaTexto);
 
@@ -135,13 +135,13 @@ export function renderTemplate(templateContent: string, context: MergeContext): 
     replaceTag(['{DATA_VENDA}', '{data_venda}'], formatDateLong(sale.dataVenda));
     replaceTag(['{MODALIDADE_GARANTIA}'], sale.isRepasseSemGarantia ? 'Repasse sem garantia mecânica (no estado)' : 'Venda com garantia legal de 90 dias (motor e câmbio)');
 
-    let formaPagtoTexto = 'À vista via Pix/TED';
+    let formaPagtoTexto = 'À vista via Pix';
     if (sale.formaPagamento === 'financiamento') {
       formaPagtoTexto = `Financiamento Bancário através da instituição ${sale.financiadoraNome || 'Bancária'}`;
     } else if (sale.formaPagamento === 'cartao_credito') {
       formaPagtoTexto = 'Cartão de Crédito';
     } else if (sale.formaPagamento === 'misto') {
-      formaPagtoTexto = 'Pagamento Misto (Entrada + Financiamento / Cartão)';
+      formaPagtoTexto = 'Pagamento Misto (Entrada + Financiamento)';
     }
     replaceTag(['{FORMA_PAGAMENTO}', '{forma_pagamento}'], formaPagtoTexto);
 
@@ -154,6 +154,15 @@ export function renderTemplate(templateContent: string, context: MergeContext): 
 
   replaceTag(['{DATA_EXTENSO}', '{data_extenso}'], todayStr);
   replaceTag(['{DATA_ATUAL}', '{data_atual}'], todayShort);
+
+  // Normalização e Limpeza Pós-Interpolação
+  // 1. Remove qualquer duplicação de prefixo monetário (ex: "R$ R$ 85.000,00" -> "R$ 85.000,00")
+  while (/R\$[\s\u00A0]*R\$/i.test(rendered)) {
+    rendered = rendered.replace(/R\$[\s\u00A0]*R\$/gi, 'R$');
+  }
+
+  // 2. Normaliza espaçamentos após o símbolo monetário
+  rendered = rendered.replace(/R\$[\s\u00A0]{2,}/g, 'R$ ');
 
   return rendered;
 }

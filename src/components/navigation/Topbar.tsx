@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { 
   PanelLeftClose, PanelLeft, Search, Bell, Sparkles, 
-  ShieldCheck, UserCheck, ChevronDown, Check, User
+  ShieldCheck, UserCheck, ChevronDown, Check, User, LogOut
 } from 'lucide-react';
 import { UserRole, Salesperson, StoreProfile } from '../../types';
 import { BrandLogo } from '../common/BrandLogo';
@@ -14,6 +14,8 @@ interface TopbarProps {
   onOpenShowroom: () => void;
   userRole: UserRole;
   setUserRole: (role: UserRole) => void;
+  onRequestElevateToGestor?: () => void;
+  onLogout?: () => void;
   activeSeller: Salesperson | null;
   pendingCommissionsCount: number;
   onNavigateToCommissions: () => void;
@@ -28,6 +30,8 @@ export const Topbar: React.FC<TopbarProps> = ({
   onOpenShowroom,
   userRole,
   setUserRole,
+  onRequestElevateToGestor,
+  onLogout,
   activeSeller,
   pendingCommissionsCount,
   onNavigateToCommissions,
@@ -210,8 +214,12 @@ export const Topbar: React.FC<TopbarProps> = ({
                 <button
                   type="button"
                   onClick={() => {
-                    setUserRole('gestor');
                     setIsUserMenuOpen(false);
+                    if (userRole !== 'gestor' && onRequestElevateToGestor) {
+                      onRequestElevateToGestor();
+                    } else {
+                      setUserRole('gestor');
+                    }
                   }}
                   className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-[6px] text-xs transition-colors ${
                     userRole === 'gestor'
@@ -244,7 +252,7 @@ export const Topbar: React.FC<TopbarProps> = ({
                 </button>
               </div>
 
-              <div className="pt-2 mt-2 border-t border-[#2D2D32]">
+              <div className="pt-2 mt-2 border-t border-[#2D2D32] space-y-1">
                 <button
                   type="button"
                   onClick={() => {
@@ -256,6 +264,20 @@ export const Topbar: React.FC<TopbarProps> = ({
                   <Sparkles className="w-4 h-4 text-[#D4130D]" />
                   <span>Ver Vitrine Pública</span>
                 </button>
+
+                {onLogout && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsUserMenuOpen(false);
+                      onLogout();
+                    }}
+                    className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-[6px] text-xs text-[#F43F5E] hover:bg-[#F43F5E]/20 hover:text-white transition-colors"
+                  >
+                    <LogOut className="w-4 h-4" />
+                    <span>Encerrar Sessão</span>
+                  </button>
+                )}
               </div>
             </div>
           )}

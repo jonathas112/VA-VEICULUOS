@@ -161,9 +161,23 @@ export interface Salesperson {
   metaMensal?: number;
   ativo: boolean;
   dataContratacao?: string;
+  senha?: string;
 }
 
 export type UserRole = 'gestor' | 'vendedor';
+
+export interface SystemUser {
+  id: string;
+  nome: string;
+  email: string;
+  telefone?: string;
+  papel: UserRole;
+  senha: string; // PIN ou senha
+  ativo: boolean;
+  metaMensal?: number;
+  dataCriacao: string;
+  ultimoAcesso?: string;
+}
 
 export interface LetterheadConfig {
   logoUrl?: string;
@@ -225,6 +239,11 @@ export type AuditActionType =
   | 'EDICAO_CONFIGURACOES'
   | 'EDICAO_CONTRATO'
   | 'EXCLUSAO_VEICULO'
+  | 'CRIACAO_USUARIO'
+  | 'EDICAO_USUARIO'
+  | 'EXCLUSAO_USUARIO'
+  | 'LOGIN_SISTEMA'
+  | 'LOGOUT_SISTEMA'
   | 'SINCRONIZACAO_FIREBASE';
 
 export interface AuditLog {

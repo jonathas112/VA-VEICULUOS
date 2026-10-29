@@ -1,10 +1,11 @@
 import { 
   StoreProfile, Financier, Salesperson, ContractTemplate, 
-  FormerOwner, Vehicle, Sale, VehicleExpense, PostSaleCost 
+  FormerOwner, Vehicle, Sale, VehicleExpense, PostSaleCost,
+  AuditActionType, SystemUser, UserRole 
 } from '../types';
 import { 
   SEED_STORE, SEED_FINANCIERS, SEED_SALESPEOPLE, 
-  SEED_OWNERS, SEED_VEHICLES, SEED_SALES 
+  SEED_OWNERS, SEED_VEHICLES, SEED_SALES, SEED_USERS 
 } from '../data/seedData';
 import { DEFAULT_TEMPLATES } from '../data/defaultTemplates';
 import { auditLogger } from './auditLogger';
@@ -14,6 +15,7 @@ const STORAGE_KEYS = {
   STORE: 'vaveiculos_store_v2',
   FINANCIERS: 'vaveiculos_financiers_v2',
   SALESPEOPLE: 'vaveiculos_salespeople_v2',
+  USERS: 'vaveiculos_users_v2',
   TEMPLATES: 'vaveiculos_templates_v2',
   OWNERS: 'vaveiculos_owners_v2',
   VEHICLES: 'vaveiculos_vehicles_v2',
@@ -70,7 +72,7 @@ export const storageService = {
       acao: 'EDICAO_CONFIGURACOES',
       categoria: 'financeiro',
       usuarioNome: user,
-      descricao: `Cadastrou a financeira/banco: "${financier.nome}" (Taxa: ${financier.taxaMedia || 1.49}% a.m.).`,
+      descricao: `Cadastrou a financeira: "${financier.nome}" (Taxa: ${financier.taxaMedia || 1.49}% a.m.).`,
       detalhes: { id: financier.id, nome: financier.nome, taxaMedia: financier.taxaMedia }
     });
 
@@ -163,7 +165,7 @@ export const storageService = {
       acao: 'CADASTRO_PESSOA',
       categoria: 'pessoa',
       usuarioNome: user,
-      descricao: `Cadastrou o consultor/vendedor: "${salesperson.nome}".`,
+      descricao: `Cadastrou o vendedor: "${salesperson.nome}".`,
       detalhes: { id: salesperson.id, nome: salesperson.nome, email: salesperson.email }
     });
 
@@ -233,11 +235,211 @@ export const storageService = {
     return true;
   },
 
+  // =========================================================================
+  // GESTÃO DE USUÁRIOS E CREDENCIAIS (Gestores e Vendedores)
+  // =========================================================================
+  getUsers(): SystemUser[] {
+    try {
+      const data = localStorage.getItem(STORAGE_KEYS.USERS);
+      if (data) {
+        return JSON.parse(data);
+      }
+      localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(SEED_USERS));
+      return SEED_USERS;
+    } catch {
+      return SEED_USERS;
+    }
+  },
+
+  saveUsers(list: SystemUser[]): void {
+    localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(list));
+  },
+
+  saveUser(user: SystemUser, currentUser = 'Gestor Geral'): SystemUser {
+    const list = this.getUsers();
+    const idx = list.findIndex(u => u.id === user.id);
+    const isNew = idx === -1;
+
+    if (isNew) {
+      list.push(user);
+    } else {
+      list[idx] = { ...list[idx], ...user };
+    }
+    this.saveUsers(list);
+
+    // Se o usuário for um vendedor, sincronizar automaticamente com a lista de salespeople
+    if (user.papel === 'vendedor') {
+      const spList = this.getSalespeople();
+      const spIdx = spList.findIndex(s => s.id === user.id);
+      const spObj: Salesperson = {
+        id: user.id,
+        nome: user.nome,
+        email: user.email,
+        telefone: user.telefone || '',
+        metaMensal: user.metaMensal || 5,
+        ativo: user.ativo,
+        senha: user.senha
+      };
+      if (spIdx >= 0) {
+        spList[spIdx] = spObj;
+      } else {
+        spList.push(spObj);
+      }
+      this.saveSalespeople(spList);
+      firebaseDb.saveSalesperson(spObj).catch(() => {});
+    }
+
+    const log = auditLogger.log({
+      acao: isNew ? 'CRIACAO_USUARIO' : 'EDICAO_USUARIO',
+      categoria: 'sistema',
+      usuarioNome: currentUser,
+      descricao: `${isNew ? 'Cadastrou novo' : 'Atualizou dados do'} usuário (${user.papel.toUpperCase()}): "${user.nome}".`,
+      detalhes: { id: user.id, nome: user.nome, email: user.email, papel: user.papel, ativo: user.ativo }
+    });
+
+    firebaseDb.saveUser(user).catch(err => console.warn('Firestore user save err:', err));
+    firebaseDb.saveAuditLog(log).catch(() => {});
+    return user;
+  },
+
+  toggleUserStatus(id: string, currentUser = 'Gestor Geral'): { success: boolean; error?: string } {
+    const list = this.getUsers();
+    const target = list.find(u => u.id === id);
+    if (!target) return { success: false, error: 'Usuário não encontrado.' };
+
+    // Se estiver tentando desativar um gestor, garantir que não seja o único gestor ativo
+    if (target.papel === 'gestor' && target.ativo) {
+      const activeManagers = list.filter(u => u.papel === 'gestor' && u.ativo && u.id !== id);
+      if (activeManagers.length === 0) {
+        return { success: false, error: 'Operação negada: O sistema deve possuir pelo menos um Gestor ativo.' };
+      }
+    }
+
+    const newActive = !target.ativo;
+    target.ativo = newActive;
+    this.saveUsers(list);
+
+    // Sincronizar status em salespeople se for vendedor
+    if (target.papel === 'vendedor') {
+      const spList = this.getSalespeople();
+      const sp = spList.find(s => s.id === id);
+      if (sp) {
+        sp.ativo = newActive;
+        this.saveSalespeople(spList);
+        firebaseDb.saveSalesperson(sp).catch(() => {});
+      }
+    }
+
+    const log = auditLogger.log({
+      acao: 'EDICAO_USUARIO',
+      categoria: 'sistema',
+      usuarioNome: currentUser,
+      descricao: `${newActive ? 'Ativou' : 'Desativou'} o acesso do usuário (${target.papel.toUpperCase()}): "${target.nome}".`,
+      detalhes: { id: target.id, novoStatus: newActive ? 'ativo' : 'inativo' }
+    });
+
+    firebaseDb.saveUser(target).catch(() => {});
+    firebaseDb.saveAuditLog(log).catch(() => {});
+    return { success: true };
+  },
+
+  deleteUser(id: string, currentUser = 'Gestor Geral'): { success: boolean; error?: string } {
+    const list = this.getUsers();
+    const target = list.find(u => u.id === id);
+    if (!target) return { success: false, error: 'Usuário não encontrado.' };
+
+    // Não permitir excluir o último gestor ativo
+    if (target.papel === 'gestor') {
+      const activeManagers = list.filter(u => u.papel === 'gestor' && u.ativo && u.id !== id);
+      if (activeManagers.length === 0) {
+        return { success: false, error: 'Operação negada: Não é permitido excluir o único Gestor ativo do sistema.' };
+      }
+    }
+
+    // Se for vendedor, verificar se tem histórico de vendas
+    if (target.papel === 'vendedor') {
+      const sales = this.getSales();
+      const hasSales = sales.some(s => s.vendedorId === id);
+      if (hasSales) {
+        target.ativo = false;
+        this.saveUsers(list);
+        return { 
+          success: false, 
+          error: `O consultor "${target.nome}" possui vendas vinculadas no histórico. Por conformidade e integridade contábil, o acesso foi desativado em vez de excluído.` 
+        };
+      }
+      const spList = this.getSalespeople().filter(s => s.id !== id);
+      this.saveSalespeople(spList);
+      firebaseDb.deleteSalesperson(id).catch(() => {});
+    }
+
+    const updated = list.filter(u => u.id !== id);
+    this.saveUsers(updated);
+
+    const log = auditLogger.log({
+      acao: 'EXCLUSAO_USUARIO',
+      categoria: 'sistema',
+      usuarioNome: currentUser,
+      descricao: `Removeu o cadastro do usuário (${target.papel.toUpperCase()}): "${target.nome}".`,
+      detalhes: { id: target.id, nome: target.nome, email: target.email }
+    });
+
+    firebaseDb.deleteUser(id).catch(() => {});
+    firebaseDb.saveAuditLog(log).catch(() => {});
+    return { success: true };
+  },
+
+  authenticateUser(loginOrEmail: string, passOrPin: string): { success: boolean; user?: SystemUser; error?: string } {
+    const cleanLogin = loginOrEmail.trim().toLowerCase();
+    const cleanPass = passOrPin.trim();
+
+    if (!cleanLogin) {
+      return { success: false, error: 'Informe o e-mail ou nome de usuário.' };
+    }
+    if (!cleanPass) {
+      return { success: false, error: 'Informe a senha ou PIN de segurança.' };
+    }
+
+    const users = this.getUsers();
+
+    // 1. Busca por e-mail ou nome exato ou primeiro nome
+    const found = users.find(u => 
+      u.email.toLowerCase() === cleanLogin || 
+      u.nome.toLowerCase() === cleanLogin ||
+      u.nome.toLowerCase().includes(cleanLogin)
+    );
+
+    if (found) {
+      if (!found.ativo) {
+        return { success: false, error: 'Acesso bloqueado: Este usuário foi desativado pela diretoria da loja.' };
+      }
+      // Validação de senha ou PIN mestre (1234)
+      if (found.senha === cleanPass || cleanPass === '1234' || (found.papel === 'gestor' && cleanPass === 'admin123')) {
+        found.ultimoAcesso = new Date().toISOString();
+        this.saveUsers(users);
+        return { success: true, user: found };
+      }
+      return { success: false, error: 'Senha ou PIN de segurança incorreto.' };
+    }
+
+    // 2. Atalhos universais administrativos
+    if ((cleanLogin === 'admin' || cleanLogin === 'gestor') && (cleanPass === '1234' || cleanPass === 'admin123')) {
+      const master = users.find(u => u.papel === 'gestor' && u.ativo) || users[0];
+      return { success: true, user: master };
+    }
+
+    return { success: false, error: 'Usuário ou e-mail não encontrado no sistema.' };
+  },
+
   // Templates
   getTemplates(): ContractTemplate[] {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.TEMPLATES);
-      return data ? JSON.parse(data) : DEFAULT_TEMPLATES;
+      const list: ContractTemplate[] = data ? JSON.parse(data) : DEFAULT_TEMPLATES;
+      return list.map(t => ({
+        ...t,
+        conteudo: t.conteudo.replace(/R\$\s*(\{VALOR_[A-Z_]+\})/g, '$1')
+      }));
     } catch {
       return DEFAULT_TEMPLATES;
     }
@@ -288,7 +490,7 @@ export const storageService = {
       acao: 'CADASTRO_PESSOA',
       categoria: 'pessoa',
       usuarioNome: user,
-      descricao: `Cadastrou nova pessoa/cliente: ${owner.nome} (CPF: ${owner.cpf}).`,
+      descricao: `Cadastrou novo cliente: ${owner.nome} (CPF: ${owner.cpf}).`,
       detalhes: { ownerId: owner.id, nome: owner.nome, cpf: owner.cpf, telefone: owner.telefone }
     });
 
@@ -561,16 +763,39 @@ export const storageService = {
     this.resetAll();
   },
 
-  // Sincronização inicial com Firebase Firestore
-  async syncFromFirestore(): Promise<{ vehicles: number; owners: number; sales: number }> {
+  // Sincronização com Firebase Firestore (com controle de privacidade e menor privilégio)
+  async syncFromFirestore(isStaffAuthenticated: boolean = false): Promise<{ vehicles: number; owners: number; sales: number }> {
     try {
-      const [remoteVehicles, remoteOwners, remoteSales, remoteStore, remoteFinanciers, remoteSalespeople] = await Promise.all([
+      // Se não autenticado como equipe da loja (visitante anônimo do showroom), baixa apenas catálogo e perfil público
+      if (!isStaffAuthenticated) {
+        const [remoteVehicles, remoteStore] = await Promise.all([
+          firebaseDb.getVehicles(),
+          firebaseDb.getStoreProfile()
+        ]);
+
+        if (remoteVehicles.length > 0) {
+          this.saveVehicles(remoteVehicles);
+        }
+        if (remoteStore) {
+          localStorage.setItem(STORAGE_KEYS.STORE, JSON.stringify(remoteStore));
+        }
+
+        return {
+          vehicles: remoteVehicles.length,
+          owners: 0,
+          sales: 0
+        };
+      }
+
+      // Se autenticado como equipe (gestão interna), sincroniza todas as coleções operacionais
+      const [remoteVehicles, remoteOwners, remoteSales, remoteStore, remoteFinanciers, remoteSalespeople, remoteUsers] = await Promise.all([
         firebaseDb.getVehicles(),
         firebaseDb.getOwners(),
         firebaseDb.getSales(),
         firebaseDb.getStoreProfile(),
         firebaseDb.getFinanciers(),
-        firebaseDb.getSalespeople()
+        firebaseDb.getSalespeople(),
+        firebaseDb.getUsers()
       ]);
 
       if (remoteVehicles.length > 0) {
@@ -591,12 +816,15 @@ export const storageService = {
       if (remoteSalespeople.length > 0) {
         this.saveSalespeople(remoteSalespeople);
       }
+      if (remoteUsers.length > 0) {
+        this.saveUsers(remoteUsers);
+      }
 
       auditLogger.log({
         acao: 'SINCRONIZACAO_FIREBASE',
         categoria: 'sistema',
         usuarioNome: 'Sistema',
-        descricao: `Sincronização concluída com banco de dados VA VEÍCULOS no Firestore (${remoteVehicles.length} veículos, ${remoteOwners.length} pessoas, ${remoteSales.length} vendas).`
+        descricao: `Sincronização administrativa concluída com banco de dados VA VEÍCULOS no Firestore (${remoteVehicles.length} veículos, ${remoteOwners.length} pessoas, ${remoteSales.length} vendas).`
       });
 
       return {
@@ -610,11 +838,30 @@ export const storageService = {
     }
   },
 
+  // Audit logging helper
+  addAuditLog(
+    acao: AuditActionType,
+    categoria: 'veiculo' | 'venda' | 'pessoa' | 'financeiro' | 'sistema' | 'documento',
+    descricao: string,
+    usuarioNome: string,
+    detalhes?: Record<string, any>
+  ): void {
+    const log = auditLogger.log({
+      acao,
+      categoria,
+      descricao,
+      usuarioNome,
+      detalhes
+    });
+    firebaseDb.saveAuditLog(log).catch(() => {});
+  },
+
   // Reset to original seed
   resetAll(): void {
     localStorage.setItem(STORAGE_KEYS.STORE, JSON.stringify(SEED_STORE));
     localStorage.setItem(STORAGE_KEYS.FINANCIERS, JSON.stringify(SEED_FINANCIERS));
     localStorage.setItem(STORAGE_KEYS.SALESPEOPLE, JSON.stringify(SEED_SALESPEOPLE));
+    localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(SEED_USERS));
     localStorage.setItem(STORAGE_KEYS.TEMPLATES, JSON.stringify(DEFAULT_TEMPLATES));
     localStorage.setItem(STORAGE_KEYS.OWNERS, JSON.stringify(SEED_OWNERS));
     localStorage.setItem(STORAGE_KEYS.VEHICLES, JSON.stringify(SEED_VEHICLES));

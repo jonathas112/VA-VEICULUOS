@@ -10,6 +10,8 @@ import {
   computePostSaleCosts, computeNetProfit, computeMarginPercent 
 } from '../../utils/formatters';
 import { PageHeader, KpiCard, StatusBadge, UnderlineTabs, formStyles } from '../common/DesignSystem';
+import { PaginationControls } from '../common/PaginationControls';
+import { usePaginatedList } from '../../hooks/usePaginatedList';
 
 interface SalesHistoryViewProps {
   sales: Sale[];
@@ -20,6 +22,7 @@ interface SalesHistoryViewProps {
   initialTab?: 'vendas' | 'pos-venda';
   onAddPostSaleCost: (saleId: string, cost: PostSaleCost) => void;
   onOpenContract: (vehicle: Vehicle, sale: Sale) => void;
+  initialSearchTerm?: string;
 }
 
 export const SalesHistoryView: React.FC<SalesHistoryViewProps> = ({
@@ -30,10 +33,17 @@ export const SalesHistoryView: React.FC<SalesHistoryViewProps> = ({
   store,
   initialTab = 'vendas',
   onAddPostSaleCost,
-  onOpenContract
+  onOpenContract,
+  initialSearchTerm = ''
 }) => {
   const [currentTab, setCurrentTab] = useState<'vendas' | 'pos-venda'>(initialTab);
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useState(initialSearchTerm);
+
+  useEffect(() => {
+    if (initialSearchTerm) {
+      setSearchTerm(initialSearchTerm);
+    }
+  }, [initialSearchTerm]);
   const [categoryFilter, setCategoryFilter] = useState<'todos' | 'garantia' | 'repasse' | 'com_custos'>('todos');
   
   // Expand/collapse post-sale cost details
@@ -85,6 +95,13 @@ export const SalesHistoryView: React.FC<SalesHistoryViewProps> = ({
     });
   }, [sales, vehicles, searchTerm, categoryFilter, currentTab]);
 
+  // Paginação com cache sob demanda
+  const pagination = usePaginatedList<Sale>({
+    items: filteredSales,
+    initialPageSize: 10,
+    dependencies: [searchTerm, categoryFilter, currentTab, filteredSales.length]
+  });
+
   // Financial Metrics
   const summary = useMemo(() => {
     const totalRevenue = sales.reduce((acc, s) => acc + s.valorVenda, 0);
@@ -133,9 +150,9 @@ export const SalesHistoryView: React.FC<SalesHistoryViewProps> = ({
   const getPostCostTypeLabel = (tipo: PostSaleCost['tipo']) => {
     switch (tipo) {
       case 'garantia_motor_cambio': return 'Garantia Motor & Câmbio (90D)';
-      case 'garantia_eletrica': return 'Garantia Elétrica / Injeção';
-      case 'guincho': return 'Guincho / Assistência 24h';
-      case 'cortesia': return 'Cortesia / Fidelização';
+      case 'garantia_eletrica': return 'Garantia Elétrica';
+      case 'guincho': return 'Guincho 24h';
+      case 'cortesia': return 'Cortesia de Venda';
       default: return 'Outro Custo Pós-Venda';
     }
   };
@@ -217,7 +234,7 @@ export const SalesHistoryView: React.FC<SalesHistoryViewProps> = ({
             className="bg-[#202024] border border-[#343439] rounded-[8px] px-3 py-2 text-xs font-medium text-[#CAC9CA] focus:outline-none focus:border-[#D4130D]"
           >
             <option value="todos">Todas as Vendas</option>
-            <option value="com_custos">Com Acionamento / Custos Lançados</option>
+            <option value="com_custos">Com Custos de Pós-Venda</option>
             <option value="garantia">Apenas Garantia Legal 90 Dias</option>
             <option value="repasse">Apenas Repasse (Sem Garantia)</option>
           </select>
@@ -252,7 +269,7 @@ export const SalesHistoryView: React.FC<SalesHistoryViewProps> = ({
       )}
 
       {/* 5. Lista de Vendas */}
-      {filteredSales.length === 0 ? (
+      {pagination.totalItems === 0 ? (
         <div className="bg-[#17171A] border border-[#2D2D32] rounded-[12px] p-12 text-center">
           <ShoppingCart className="w-10 h-10 text-[#68686E] mx-auto mb-3" />
           <h3 className="text-base font-bold text-[#F5F5F5] font-display">
@@ -264,7 +281,7 @@ export const SalesHistoryView: React.FC<SalesHistoryViewProps> = ({
         </div>
       ) : (
         <div className="space-y-4">
-          {filteredSales.map((sale) => {
+          {pagination.paginatedItems.map((sale) => {
             const vehicle = vehicles.find(v => v.id === sale.veiculoId);
             const preSaleCost = vehicle ? computePreSaleTotalCost(vehicle) : 0;
             const postSaleCostsTotal = computePostSaleCosts(sale);
@@ -351,7 +368,7 @@ export const SalesHistoryView: React.FC<SalesHistoryViewProps> = ({
                         <button
                           onClick={() => onOpenContract(vehicle, sale)}
                           className="p-2 rounded-[8px] bg-[#202024] hover:bg-[#2D2D32] border border-[#2D2D32] text-[#CAC9CA] hover:text-[#F5F5F5] transition-colors cursor-pointer"
-                          title="Visualizar e Imprimir Contrato / Termo de Garantia"
+                          title="Visualizar Contrato de Venda e Garantia"
                         >
                           <FileText className="w-4 h-4 text-[#A7A7AB]" />
                         </button>
@@ -413,8 +430,8 @@ export const SalesHistoryView: React.FC<SalesHistoryViewProps> = ({
                               className={formStyles.select}
                             >
                               <option value="garantia_motor_cambio">Garantia Motor & Câmbio</option>
-                              <option value="garantia_eletrica">Garantia Elétrica / Injeção</option>
-                              <option value="guincho">Guincho / Socorro 24h</option>
+                              <option value="garantia_eletrica">Garantia Elétrica</option>
+                              <option value="guincho">Guincho 24h</option>
                               <option value="cortesia">Cortesia para o Cliente</option>
                               <option value="outro">Outro Custo</option>
                             </select>
@@ -513,6 +530,22 @@ export const SalesHistoryView: React.FC<SalesHistoryViewProps> = ({
             );
           })}
         </div>
+      )}
+
+      {/* Paginação de Vendas com Cache */}
+      {pagination.totalItems > 0 && (
+        <PaginationControls
+          currentPage={pagination.currentPage}
+          totalPages={pagination.totalPages}
+          totalItems={pagination.totalItems}
+          pageSize={pagination.pageSize}
+          onPageChange={pagination.goToPage}
+          onPageSizeChange={pagination.changePageSize}
+          pageSizeOptions={[5, 10, 20, 50]}
+          isCached={pagination.isCurrentPageCached}
+          isLoading={pagination.isLoading}
+          itemLabel="vendas realizadas"
+        />
       )}
 
     </div>

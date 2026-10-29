@@ -1,15 +1,17 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Car, Plus, Search, Filter, ShieldCheck, AlertTriangle, 
   Wrench, Calculator, ShoppingCart, FileText, CheckCircle2, 
   Trash2, Eye, Fuel, Gauge, Calendar, DollarSign, LayoutGrid, List
 } from 'lucide-react';
-import { Vehicle, FormerOwner, CommercialCategory, VehicleStatus, VehicleType } from '../../types';
+import { Vehicle, FormerOwner, CommercialCategory, VehicleStatus, VehicleType, UserRole } from '../../types';
 import { 
   formatCurrency, formatNumber, formatDate, 
   computeAcquisitionCost, computePatioExpenses, computePreSaleTotalCost 
 } from '../../utils/formatters';
 import { PageHeader, KpiCard, StatusBadge, UnderlineTabs, formStyles } from '../common/DesignSystem';
+import { PaginationControls } from '../common/PaginationControls';
+import { usePaginatedList } from '../../hooks/usePaginatedList';
 
 interface InventoryViewProps {
   vehicles: Vehicle[];
@@ -19,6 +21,8 @@ interface InventoryViewProps {
   onOpenSaleModal: (vehicle: Vehicle) => void;
   onOpenReceiptModal: (vehicle: Vehicle, owner?: FormerOwner) => void;
   onDeleteVehicle: (vehicleId: string) => void;
+  userRole?: UserRole;
+  initialSearchTerm?: string;
 }
 
 export const InventoryView: React.FC<InventoryViewProps> = ({
@@ -28,10 +32,19 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
   onOpenCostsModal,
   onOpenSaleModal,
   onOpenReceiptModal,
-  onDeleteVehicle
+  onDeleteVehicle,
+  userRole = 'gestor',
+  initialSearchTerm = ''
 }) => {
-  const [searchTerm, setSearchTerm] = useState('');
-  const [activeTab, setActiveTab] = useState<'todos' | 'em_estoque' | 'vendido' | 'repasse'>('em_estoque');
+  const [searchTerm, setSearchTerm] = useState(initialSearchTerm);
+  const [activeTab, setActiveTab] = useState<'todos' | 'em_estoque' | 'vendido' | 'repasse'>('todos');
+
+  useEffect(() => {
+    if (initialSearchTerm) {
+      setSearchTerm(initialSearchTerm);
+      setActiveTab('todos'); // Permite encontrar tanto estoque quanto vendido
+    }
+  }, [initialSearchTerm]);
   const [typeFilter, setTypeFilter] = useState<'todos' | VehicleType>('todos');
   const [viewMode, setViewMode] = useState<'tabela' | 'cards'>('tabela');
 
@@ -55,6 +68,13 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
       return matchesSearch && matchesTab && matchesType;
     });
   }, [vehicles, searchTerm, activeTab, typeFilter]);
+
+  // Paginação sob demanda com cache de páginas anteriores
+  const pagination = usePaginatedList<Vehicle>({
+    items: filteredVehicles,
+    initialPageSize: 10,
+    dependencies: [searchTerm, activeTab, typeFilter, filteredVehicles.length]
+  });
 
   // Stock KPIs
   const stockMetrics = useMemo(() => {
@@ -108,7 +128,7 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
           subtext="Compra + DETRAN + Pátio"
         />
         <KpiCard
-          title="Valor FIPE / Anunciado"
+          title="Preço Anunciado Total"
           value={formatCurrency(stockMetrics.totalCommercial)}
           icon={DollarSign}
           subtext="Preço de tabela showroom"
@@ -177,8 +197,8 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
         </div>
       </div>
 
-      {/* 5. Lista / Tabela de Veículos */}
-      {filteredVehicles.length === 0 ? (
+      {/* 5. Tabela de Veículos em Estoque */}
+      {pagination.totalItems === 0 ? (
         <div className="bg-[#17171A] border border-[#2D2D32] rounded-[12px] p-12 text-center">
           <Car className="w-10 h-10 text-[#68686E] mx-auto mb-3" />
           <h3 className="text-base font-bold text-[#F5F5F5] font-display">
@@ -202,7 +222,7 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr>
-                  <th className={formStyles.tableHeader}>Veículo / Identificação</th>
+                  <th className={formStyles.tableHeader}>Veículo e Identificação</th>
                   <th className={formStyles.tableHeader}>Categoria</th>
                   <th className={formStyles.tableHeader}>Status</th>
                   <th className={`${formStyles.tableHeader} text-right`}>Custo Aquisição</th>
@@ -213,7 +233,7 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#2D2D32]">
-                {filteredVehicles.map(v => {
+                {pagination.paginatedItems.map(v => {
                   const acquisitionCost = computeAcquisitionCost(v);
                   const patioExpenses = computePatioExpenses(v);
                   const totalInvested = computePreSaleTotalCost(v);
@@ -319,14 +339,14 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                             <button
                               onClick={() => onOpenSaleModal(v)}
                               className="px-2.5 py-1 rounded-[6px] bg-[#D4130D] hover:bg-[#E3271F] text-white text-xs font-semibold transition-colors flex items-center gap-1 cursor-pointer"
-                              title="Registrar Venda / Contrato"
+                              title="Registrar Venda do Veículo"
                             >
                               <ShoppingCart className="w-3.5 h-3.5" /> Vender
                             </button>
                           )}
 
-                          {/* Excluir se em estoque */}
-                          {v.status === 'em_estoque' && (
+                          {/* Excluir se em estoque (Apenas perfil Gestor com privilégios administrativos) */}
+                          {v.status === 'em_estoque' && userRole === 'gestor' && (
                             <button
                               onClick={() => {
                                 if (window.confirm(`Deseja excluir o veículo ${v.marca} ${v.modelo} (${v.placa})?`)) {
@@ -334,7 +354,7 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                                 }
                               }}
                               className="p-1.5 rounded-[6px] hover:bg-[#D4130D]/20 text-[#68686E] hover:text-[#D4130D] transition-colors cursor-pointer"
-                              title="Excluir Registro"
+                              title="Excluir Registro (Gestor)"
                             >
                               <Trash2 className="w-4 h-4" />
                             </button>
@@ -354,7 +374,7 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
 
         /* CARDS GRID */
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredVehicles.map(v => {
+          {pagination.paginatedItems.map(v => {
             const acquisitionCost = computeAcquisitionCost(v);
             const patioExpenses = computePatioExpenses(v);
             const totalInvested = computePreSaleTotalCost(v);
@@ -432,6 +452,22 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
             );
           })}
         </div>
+      )}
+
+      {/* Paginação de Estoque com Cache */}
+      {pagination.totalItems > 0 && (
+        <PaginationControls
+          currentPage={pagination.currentPage}
+          totalPages={pagination.totalPages}
+          totalItems={pagination.totalItems}
+          pageSize={pagination.pageSize}
+          onPageChange={pagination.goToPage}
+          onPageSizeChange={pagination.changePageSize}
+          pageSizeOptions={[10, 20, 50]}
+          isCached={pagination.isCurrentPageCached}
+          isLoading={pagination.isLoading}
+          itemLabel="veículos no estoque"
+        />
       )}
 
     </div>

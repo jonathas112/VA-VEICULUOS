@@ -50,8 +50,15 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({
     xl: 'text-2xl'
   };
 
+  // Only allow data:image/ or https:// for logo URL to prevent XSS / malicious URI schemes
+  const isSafeLogoUrl = (url?: string) => {
+    if (!url) return false;
+    const trimmed = url.trim();
+    return trimmed.startsWith('data:image/') || trimmed.startsWith('https://');
+  };
+
   // If a valid custom logo URL is present and hasn't errored
-  const hasCustomLogo = Boolean(logoUrl && logoUrl.trim().length > 0 && !imgError);
+  const hasCustomLogo = Boolean(logoUrl && isSafeLogoUrl(logoUrl) && !imgError);
 
   if (hasCustomLogo && !isCollapsed) {
     return (

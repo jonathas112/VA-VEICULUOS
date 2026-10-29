@@ -11,7 +11,7 @@ import {
   serverTimestamp 
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
-import { Vehicle, FormerOwner, Sale, StoreProfile, AuditLog, ContractTemplate, Financier, Salesperson } from '../types';
+import { Vehicle, FormerOwner, Sale, StoreProfile, AuditLog, ContractTemplate, Financier, Salesperson, SystemUser } from '../types';
 
 export const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
@@ -200,6 +200,23 @@ export const firebaseDb = {
     }
   },
 
+  // Paginação sob demanda de logs de auditoria do banco
+  async getPaginatedAuditLogs(pageSize: number = 10, pageNumber: number = 1): Promise<{ logs: AuditLog[]; totalCount: number }> {
+    try {
+      const snap = await getDocs(collection(db, 'audit_logs'));
+      const allLogs = snap.docs.map(d => d.data() as AuditLog).sort(
+        (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+      );
+      const totalCount = allLogs.length;
+      const startIdx = (pageNumber - 1) * pageSize;
+      const paginatedSlice = allLogs.slice(startIdx, startIdx + pageSize);
+      return { logs: paginatedSlice, totalCount };
+    } catch (e) {
+      handleFirestoreError(e, OperationType.LIST, 'audit_logs');
+      return { logs: [], totalCount: 0 };
+    }
+  },
+
   // Financeiras & Bancos credenciados
   async saveFinancier(financier: Financier): Promise<boolean> {
     try {
@@ -264,6 +281,40 @@ export const firebaseDb = {
       return snap.docs.map(d => d.data() as Salesperson);
     } catch (e) {
       handleFirestoreError(e, OperationType.LIST, 'salespeople');
+      return [];
+    }
+  },
+
+  // Usuários do Sistema (Gestores e Vendedores)
+  async saveUser(user: SystemUser): Promise<boolean> {
+    try {
+      await setDoc(doc(db, 'users', user.id), {
+        ...user,
+        atualizadoEm: new Date().toISOString()
+      }, { merge: true });
+      return true;
+    } catch (e) {
+      handleFirestoreError(e, OperationType.WRITE, `users/${user.id}`);
+      return false;
+    }
+  },
+
+  async deleteUser(userId: string): Promise<boolean> {
+    try {
+      await deleteDoc(doc(db, 'users', userId));
+      return true;
+    } catch (e) {
+      handleFirestoreError(e, OperationType.DELETE, `users/${userId}`);
+      return false;
+    }
+  },
+
+  async getUsers(): Promise<SystemUser[]> {
+    try {
+      const snap = await getDocs(collection(db, 'users'));
+      return snap.docs.map(d => d.data() as SystemUser);
+    } catch (e) {
+      handleFirestoreError(e, OperationType.LIST, 'users');
       return [];
     }
   }

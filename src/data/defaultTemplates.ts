@@ -25,7 +25,7 @@ Placa: {VEICULO_PLACA} | Renavam: {VEICULO_RENAVAM} | Chassi: {VEICULO_CHASSI}
 KM no ato da entrega: {VEICULO_KM} km
 
 4. DO PREÇO E FORMA DE PAGAMENTO:
-O preço certo e ajustado para a presente transação é de R$ {VALOR_VENDA} ({VALOR_VENDA_EXTENSO}), a ser pago da seguinte forma:
+O preço certo e ajustado para a presente transação é de {VALOR_VENDA} ({VALOR_VENDA_EXTENSO}), a ser pago da seguinte forma:
 Condição: {FORMA_PAGAMENTO}
 {DETALHES_FINANCIAMENTO}
 
@@ -46,7 +46,7 @@ Vendedor Responsável: {VENDEDOR_NOME}`
   },
   {
     id: 'contrato_repasse_sem_garantia',
-    titulo: 'Contrato de Repasse de Veículo (Vendido no Estado / Sem Garantia)',
+    titulo: 'Contrato de Repasse de Veículo (Sem Garantia)',
     tipo: 'repasse',
     descricao: 'Para veículos negociados na modalidade Repasse, com valor de oportunidade, sem garantia mecânica.',
     conteudo: `INSTRUMENTO PARTICULAR DE COMPRA E VENDA DE VEÍCULO AUTOMOTOR NA MODALIDADE REPASSE (SEM GARANTIA)
@@ -65,12 +65,12 @@ Veículo: {VEICULO_MARCA} {VEICULO_MODELO} {VEICULO_VERSAO}
 Ano: {VEICULO_ANO} | Placa: {VEICULO_PLACA} | Renavam: {VEICULO_RENAVAM} | Chassi: {VEICULO_CHASSI}
 KM: {VEICULO_KM} km
 
-4. DO PREÇO DE ATACADO/REPASSE:
-Valor acordado: R$ {VALOR_VENDA} ({VALOR_VENDA_EXTENSO}).
+4. DO PREÇO DE REPASSE:
+Valor acordado: {VALOR_VENDA} ({VALOR_VENDA_EXTENSO}).
 Forma de Pagamento: {FORMA_PAGAMENTO}.
 
 5. DA CLÁUSULA EXPRESSA DE ISENÇÃO DE GARANTIA:
-O COMPRADOR declara expressamente estar ciente de que o presente veículo é vendido na modalidade REPASSE COMERCIAL (VENDA NO ESTADO EM QUE SE ENCONTRA), adquirindo-o por valor significativamente abaixo do preço de mercado/tabela FIPE.
+O COMPRADOR declara expressamente estar ciente de que o presente veículo é vendido na modalidade REPASSE COMERCIAL (VENDA NO ESTADO EM QUE SE ENCONTRA), adquirindo-o por valor significativamente abaixo do preço de mercado da tabela FIPE.
 5.1. O COMPRADOR vistoriou o veículo pessoalmente ou por intermédio de profissional mecânico e funileiro de sua estrita confiança, aceitando o estado mecânico, estrutural, de funilaria, elétrico e estético em que se encontra, renunciando expressamente a quaisquer reclamações posteriores ou garantia por vícios aparentes ou ocultos.
 5.2. As despesas de eventuais reparos imediatos ou futuros correm por conta exclusiva do COMPRADOR.
 
@@ -92,25 +92,25 @@ VENDEDORA                                      COMPRADOR(A)`
 
 A empresa {LOJA_RAZAO_SOCIAL}, inscrita no CNPJ sob o nº {LOJA_CNPJ}, declara para os devidos fins que comprou do(a) Sr.(a):
 
-VENDEDOR(A) / ANTIGO DONO:
+ANTIGO PROPRIETÁRIO:
 Nome: {DONO_NOME}
 CPF: {DONO_CPF}
 Endereço: {DONO_ENDERECO}
 Telefone: {DONO_TELEFONE}
 
 O VEÍCULO ABAIXO DESCRITO:
-Marca/Modelo: {VEICULO_MARCA} {VEICULO_MODELO} {VEICULO_VERSAO}
-Ano Fab/Mod: {VEICULO_ANO} | Placa: {VEICULO_PLACA} | Cor: {VEICULO_COR}
+Veículo: {VEICULO_MARCA} {VEICULO_MODELO} {VEICULO_VERSAO}
+Ano: {VEICULO_ANO} | Placa: {VEICULO_PLACA} | Cor: {VEICULO_COR}
 Renavam: {VEICULO_RENAVAM} | Chassi: {VEICULO_CHASSI} | KM: {VEICULO_KM} km
 
 CONDIÇÕES DA TRANSAÇÃO:
-Valor Pago pela Loja: R$ {VALOR_PAGO} ({VALOR_PAGO_EXTENSO})
+Valor Pago pela Loja: {VALOR_PAGO} ({VALOR_PAGO_EXTENSO})
 Data da Operação: {DATA_ENTRADA}
 Modalidade: {CATEGORIA_COMERCIAL}
 
 SITUAÇÃO DE DÉBITOS DETRAN (Multas, IPVA, Licenciamento):
 Possui Débito: {TEM_DEBITO}
-Valor dos Débitos: R$ {VALOR_DEBITO}
+Valor dos Débitos: {VALOR_DEBITO}
 Responsável pelo Pagamento do Débito: {QUEM_ARCA_DEBITO}
 
 O VENDEDOR declara sob as penas da lei que o veículo se encontra livre e desembaraçado de quaisquer outros ônus judiciais ou extrajudiciais, salvo os débitos acima discriminados, autorizando a transferência imediata de titularidade.
@@ -119,7 +119,7 @@ O VENDEDOR declara sob as penas da lei que o veículo se encontra livre e desemb
 
 _____________________________________          _____________________________________
 {LOJA_RAZAO_SOCIAL}                           {DONO_NOME}
-Compradora (Loja)                              Vendedor(a) / Antigo Dono`
+Compradora (Loja)                              Antigo Proprietário`
   },
   {
     id: 'recibo_venda_entrega',
@@ -128,7 +128,7 @@ Compradora (Loja)                              Vendedor(a) / Antigo Dono`
     descricao: 'Comprovante emitido na entrega do veículo ao cliente comprador.',
     conteudo: `RECIBO DE VENDA E TERMO DE ENTREGA DE VEÍCULO
 
-Recebemos de {CLIENTE_NOME}, CPF {CLIENTE_CPF}, o valor total de R$ {VALOR_VENDA} referente à aquisição do veículo:
+Recebemos de {CLIENTE_NOME}, CPF {CLIENTE_CPF}, o valor total de {VALOR_VENDA} referente à aquisição do veículo:
 {VEICULO_MARCA} {VEICULO_MODELO} {VEICULO_VERSAO} - Ano {VEICULO_ANO}
 Placa: {VEICULO_PLACA} | Renavam: {VEICULO_RENAVAM} | Chassi: {VEICULO_CHASSI}
 
