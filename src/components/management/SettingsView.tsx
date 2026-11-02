@@ -1,16 +1,16 @@
 import React, { useState, useMemo } from 'react';
 import { 
-  Building, Landmark, FileText, Users, Check, AlertCircle, 
-  Upload, Image as ImageIcon, Eye, Printer, RotateCcw, 
-  Cloud, RefreshCw, Database, Sparkles, MapPin, Phone,
-  Trash2, Power, PowerOff, Edit3, Search, X, CheckCircle2,
-  AlertTriangle, Shield, Award, UserCheck
+  Landmark, Users, Check, 
+  Upload, Eye, Printer, RotateCcw, 
+  RefreshCw, Database, MapPin,
+  Trash2, Power, PowerOff, Edit3, Search, X,
+  AlertTriangle
 } from 'lucide-react';
-import { StoreProfile, Financier, ContractTemplate, Salesperson, LetterheadConfig } from '../../types';
+import { StoreProfile, Financier, ContractTemplate, Salesperson } from '../../types';
 import { PageHeader, UnderlineTabs } from '../common/DesignSystem';
 import { BrandLogo } from '../common/BrandLogo';
 import { compressImageFile } from '../../utils/imageCompressor';
-import { maskCPF, maskCNPJ, maskPhone, maskCEP, isValidCNPJ, isValidPhone, isValidCEP } from '../../utils/formatters';
+import { maskCNPJ, maskPhone, maskCEP, isValidCNPJ, isValidPhone, isValidCEP } from '../../utils/formatters';
 import { AVAILABLE_MERGE_TAGS, renderTemplate } from '../../utils/templateEngine';
 import { DEFAULT_TEMPLATES } from '../../data/defaultTemplates';
 import { storageService } from '../../services/storage';
@@ -84,8 +84,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
   // Formulário de Papel Timbrado e Contratos
   const [selectedTemplate, setSelectedTemplate] = useState<ContractTemplate>(templates[0] || DEFAULT_TEMPLATES[0]);
-  const [templateSavedNotice, setTemplateSavedNotice] = useState(false);
-  const [showPrintPreview, setShowPrintPreview] = useState(false);
 
   // Formulário de Novas Financeiras
   const [newFinNome, setNewFinNome] = useState('');
@@ -197,8 +195,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   // Handlers de Modelos de Contratos
   const handleSaveTemplate = () => {
     onSaveTemplate(selectedTemplate);
-    setTemplateSavedNotice(true);
-    setTimeout(() => setTemplateSavedNotice(false), 3000);
   };
 
   const handleResetTemplate = () => {

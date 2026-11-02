@@ -1,29 +1,27 @@
 import React, { useState, useMemo } from 'react';
 import { 
   DollarSign, TrendingUp, Calendar, Award, UserCheck, 
-  Wrench, Search, Printer, ShieldCheck, AlertTriangle, 
-  ChevronRight, ArrowUpRight, Percent, Filter, ShoppingCart
+  Wrench, Search, Printer, ShieldCheck, ShoppingCart
 } from 'lucide-react';
 import { Sale, Vehicle, Salesperson, StoreProfile } from '../../types';
 import { 
-  formatCurrency, formatDate, computePreSaleTotalCost, 
+  formatCurrency, formatDate, 
   computePostSaleCosts, computeNetProfit, computeMarginPercent,
   getMonthYearKey, getMonthName 
 } from '../../utils/formatters';
-import { PageHeader, KpiCard, StatusBadge, formStyles } from '../common/DesignSystem';
+import { PageHeader, KpiCard } from '../common/DesignSystem';
 
 interface FinancialViewProps {
   sales: Sale[];
   vehicles: Vehicle[];
   salespeople: Salesperson[];
-  store: StoreProfile;
+  store?: StoreProfile;
 }
 
 export const FinancialView: React.FC<FinancialViewProps> = ({
   sales,
   vehicles,
-  salespeople,
-  store
+  salespeople
 }) => {
   const currentMonthKey = getMonthYearKey(new Date().toISOString());
   const [selectedPeriodMode, setSelectedPeriodMode] = useState<'month' | 'all' | 'custom'>('month');

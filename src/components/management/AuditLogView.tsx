@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
-  ShieldAlert, Search, Filter, RefreshCw, Trash2, 
-  Calendar, User, Clock, Eye, X, CheckCircle, AlertTriangle, 
+  ShieldAlert, Search, RefreshCw, 
+  User, Clock, Eye, X, 
   Car, ShoppingCart, DollarSign, FileText, Settings, Database, ShieldCheck
 } from 'lucide-react';
 import { AuditLog, AuditActionType } from '../../types';

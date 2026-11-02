@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
 import { 
-  FileText, Search, Printer, Copy, Check, Eye, 
-  ShieldCheck, FileSignature, HelpCircle, ArrowRight,
-  ExternalLink, Download, FileCheck, Layers
+  FileText, Printer, Copy, Check, 
+  ShieldCheck, FileSignature, Layers
 } from 'lucide-react';
 import { ContractTemplate, StoreProfile, Vehicle, FormerOwner, Sale } from '../../types';
 import { PageHeader, KpiCard, UnderlineTabs, formStyles } from '../common/DesignSystem';
@@ -15,7 +14,7 @@ interface DocumentsViewProps {
   vehicles: Vehicle[];
   owners: FormerOwner[];
   sales: Sale[];
-  onOpenContractModal: (vehicle: Vehicle, sale?: Sale, templateId?: string) => void;
+  onOpenContractModal?: (vehicle: Vehicle, sale?: Sale, templateId?: string) => void;
   onUpdateTemplate: (template: ContractTemplate) => void;
 }
 
@@ -25,7 +24,6 @@ export const DocumentsView: React.FC<DocumentsViewProps> = ({
   vehicles,
   owners,
   sales,
-  onOpenContractModal,
   onUpdateTemplate
 }) => {
   const [activeTab, setActiveTab] = useState<'gerador' | 'modelos'>('gerador');

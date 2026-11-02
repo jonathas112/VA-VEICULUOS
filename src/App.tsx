@@ -12,7 +12,6 @@ import { PersonsView } from './components/management/PersonsView';
 import { SalesHistoryView } from './components/management/SalesHistoryView';
 import { PendingCommissionsView } from './components/management/PendingCommissionsView';
 import { FinancialView } from './components/management/FinancialView';
-import { OwnersView } from './components/management/OwnersView';
 import { SettingsView } from './components/management/SettingsView';
 import { DocumentsView } from './components/management/DocumentsView';
 import { AuditLogView } from './components/management/AuditLogView';
@@ -366,11 +365,6 @@ export default function App() {
     });
   };
 
-  const handleResetDemo = () => {
-    storageService.resetToSeed();
-    refreshData();
-  };
-
   const handleNavigateFromSearch = (tab: string, _entityId?: string, queryText?: string) => {
     setCurrentView('management');
     setManagementTab(tab);
@@ -386,7 +380,6 @@ export default function App() {
       {currentView === 'login' ? (
         <LoginView
           store={store}
-          salespeople={salespeople}
           onLoginSuccess={handleFullLoginSuccess}
           onOpenShowroom={handleOpenShowroom}
         />

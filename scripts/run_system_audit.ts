@@ -29,7 +29,6 @@ const confirmLogs: string[] = [];
 import { 
   formatCurrency, maskCurrency, unmaskCurrency, maskCPF, isValidCPF,
   maskCNPJ, isValidCNPJ, maskPhone, isValidPhone, maskCEP, isValidCEP, maskPlate, isValidPlate, maskRenavam, isValidRenavam, isValidYear,
-  formatDate, formatDateTime, formatDateLong, getMonthYearKey, getMonthName,
   numberToWordsPtBr, computeAcquisitionCost, computePatioExpenses,
   computePreSaleTotalCost, computePostSaleCosts, computeTotalSaleCost,
   computeNetProfit, computeGrossProfit, computeMarginPercent
@@ -37,8 +36,8 @@ import {
 
 import { storageService } from '../src/services/storage';
 import { auditLogger } from '../src/services/auditLogger';
-import { renderTemplate, AVAILABLE_MERGE_TAGS } from '../src/utils/templateEngine';
-import { Vehicle, Sale, FormerOwner, Financier, Salesperson, StoreProfile, ContractTemplate } from '../src/types';
+import { renderTemplate } from '../src/utils/templateEngine';
+import { Vehicle, Sale, FormerOwner, Financier, Salesperson, StoreProfile } from '../src/types';
 
 interface TestResult {
   id: string;
@@ -679,7 +678,7 @@ console.log('-> Executando testes da Seção 4: Conflitos e Integridade de Dados
 
 // Conflito 4.3: Venda com Margem Negativa (Prejuízo Comercial)
 {
-  const vehCost = computePreSaleTotalCost(mockVehicleBase); // 82.500
+  computePreSaleTotalCost(mockVehicleBase); // 82.500
   const saleAtLoss: Sale = {
     ...mockSaleNormal,
     id: 'sale_loss_test',
@@ -735,7 +734,7 @@ console.log('-> Executando testes da Seção 4: Conflitos e Integridade de Dados
   let threwException = false;
   try {
     const v = vehiclesEmpty.find(veh => veh.id === orphanSale.veiculoId);
-    const profit = v ? computeNetProfit(v, orphanSale) : 0;
+    if (v) computeNetProfit(v, orphanSale);
   } catch (e) {
     threwException = true;
   }
@@ -1112,7 +1111,7 @@ console.log('-> Executando testes da Seção 7: Auditoria e Logs...');
 
   const logsAfter = auditLogger.getLogs();
   const foundLog = logsAfter.find(l => l.id === newLog.id);
-  const passLogRecord = foundLog !== undefined && foundLog.acao === 'EDICAO_CONFIGURACOES';
+  const passLogRecord = foundLog !== undefined && foundLog.acao === 'EDICAO_CONFIGURACOES' && logsAfter.length === initialLogsCount + 1;
   record('AUD_01', 'Auditoria/Logs', 'auditLogger.log gera e persiste registro com ID e timestamp', passLogRecord, 'Log registrado', passLogRecord ? `Log gravado com id: ${foundLog?.id}` : 'Falha');
 }
 

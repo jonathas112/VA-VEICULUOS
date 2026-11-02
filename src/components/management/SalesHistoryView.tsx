@@ -1,12 +1,12 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
-  ShoppingCart, Search, Filter, Calendar, ShieldCheck, ShieldAlert,
-  AlertTriangle, DollarSign, Plus, Wrench, FileText, 
-  ChevronDown, ChevronUp, UserCheck, AlertCircle, Eye, Printer, TrendingUp
+  ShoppingCart, Search, ShieldCheck, ShieldAlert,
+  DollarSign, Plus, Wrench, FileText, 
+  ChevronDown, ChevronUp, TrendingUp
 } from 'lucide-react';
 import { Sale, Vehicle, PostSaleCost, UserRole, ContractTemplate, StoreProfile } from '../../types';
 import { 
-  formatCurrency, formatDate, computePreSaleTotalCost, 
+  formatCurrency, formatDate, 
   computePostSaleCosts, computeNetProfit, computeMarginPercent 
 } from '../../utils/formatters';
 import { PageHeader, KpiCard, StatusBadge, UnderlineTabs, formStyles } from '../common/DesignSystem';
@@ -17,8 +17,8 @@ interface SalesHistoryViewProps {
   sales: Sale[];
   vehicles: Vehicle[];
   userRole: UserRole;
-  templates: ContractTemplate[];
-  store: StoreProfile;
+  templates?: ContractTemplate[];
+  store?: StoreProfile;
   initialTab?: 'vendas' | 'pos-venda';
   onAddPostSaleCost: (saleId: string, cost: PostSaleCost) => void;
   onOpenContract: (vehicle: Vehicle, sale: Sale) => void;
@@ -29,8 +29,6 @@ export const SalesHistoryView: React.FC<SalesHistoryViewProps> = ({
   sales,
   vehicles,
   userRole,
-  templates,
-  store,
   initialTab = 'vendas',
   onAddPostSaleCost,
   onOpenContract,
@@ -283,8 +281,6 @@ export const SalesHistoryView: React.FC<SalesHistoryViewProps> = ({
         <div className="space-y-4">
           {pagination.paginatedItems.map((sale) => {
             const vehicle = vehicles.find(v => v.id === sale.veiculoId);
-            const preSaleCost = vehicle ? computePreSaleTotalCost(vehicle) : 0;
-            const postSaleCostsTotal = computePostSaleCosts(sale);
             const netProfit = vehicle ? computeNetProfit(vehicle, sale) : 0;
             const marginPercent = vehicle ? computeMarginPercent(vehicle, sale) : '0';
             const isExpanded = currentTab === 'pos-venda'

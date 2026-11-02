@@ -1,12 +1,12 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
-  Car, Plus, Search, Filter, ShieldCheck, AlertTriangle, 
-  Wrench, Calculator, ShoppingCart, FileText, CheckCircle2, 
-  Trash2, Eye, Fuel, Gauge, Calendar, DollarSign, LayoutGrid, List
+  Car, Plus, Search, 
+  Wrench, Calculator, ShoppingCart, FileText, 
+  Trash2, DollarSign, LayoutGrid, List
 } from 'lucide-react';
-import { Vehicle, FormerOwner, CommercialCategory, VehicleStatus, VehicleType, UserRole } from '../../types';
+import { Vehicle, FormerOwner, VehicleType, UserRole } from '../../types';
 import { 
-  formatCurrency, formatNumber, formatDate, 
+  formatCurrency, 
   computeAcquisitionCost, computePatioExpenses, computePreSaleTotalCost 
 } from '../../utils/formatters';
 import { PageHeader, KpiCard, StatusBadge, UnderlineTabs, formStyles } from '../common/DesignSystem';
@@ -375,8 +375,6 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
         /* CARDS GRID */
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
           {pagination.paginatedItems.map(v => {
-            const acquisitionCost = computeAcquisitionCost(v);
-            const patioExpenses = computePatioExpenses(v);
             const totalInvested = computePreSaleTotalCost(v);
             const owner = owners.find(o => o.id === v.antigoDonoId);
 

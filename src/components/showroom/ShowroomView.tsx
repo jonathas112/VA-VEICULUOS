@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { 
-  Car, Search, ChevronDown, ChevronUp, SlidersHorizontal, 
+  Car, Search, ChevronDown, SlidersHorizontal, 
   MapPin, Phone, MessageCircle, X, RotateCcw, Check, Sparkles
 } from 'lucide-react';
 import { Vehicle, StoreProfile, VehicleType } from '../../types';
@@ -889,7 +889,16 @@ export const ShowroomView: React.FC<ShowroomViewProps> = ({
 
           <div className="pt-6 border-t border-[#2D2D32] flex flex-col sm:flex-row items-center justify-between gap-2 text-[11px] text-[#68686E]">
             <p>© {new Date().getFullYear()} {store.nomeFantasia}. Todos os direitos reservados.</p>
-            <p>VA Veículos • Sistema Integrado de Gestão Automotiva · Areial - PB</p>
+            <div className="flex items-center gap-4">
+              <p>VA Veículos • Sistema Integrado de Gestão Automotiva · Areial - PB</p>
+              <button
+                type="button"
+                onClick={onEnterManagement}
+                className="hover:text-neutral-400 transition-colors cursor-pointer underline text-[11px]"
+              >
+                Acesso Restrito
+              </button>
+            </div>
           </div>
         </div>
       </footer>

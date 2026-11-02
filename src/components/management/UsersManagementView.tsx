@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
 import { 
-  Users, ShieldCheck, UserCheck, Plus, Search, 
-  Filter, KeyRound, Edit2, Trash2, CheckCircle2, 
-  XCircle, AlertCircle, Phone, Mail, Award, Calendar,
-  Eye, EyeOff, Lock, RefreshCw, X, ShieldAlert
+  Users, ShieldCheck, UserCheck, Search, 
+  KeyRound, Edit2, Trash2, CheckCircle2, 
+  AlertCircle, Phone, Mail, Award,
+  Eye, EyeOff, X, ShieldAlert
 } from 'lucide-react';
-import { SystemUser, UserRole, Salesperson, StoreProfile } from '../../types';
-import { PageHeader, KpiCard, StatusBadge, formStyles } from '../common/DesignSystem';
+import { SystemUser, UserRole, StoreProfile } from '../../types';
+import { PageHeader, KpiCard, formStyles } from '../common/DesignSystem';
 import { storageService } from '../../services/storage';
 import { maskPhone, isValidPhone } from '../../utils/formatters';
 import { PaginationControls } from '../common/PaginationControls';
@@ -14,14 +14,13 @@ import { usePaginatedList } from '../../hooks/usePaginatedList';
 
 interface UsersManagementViewProps {
   currentUserRole: UserRole;
-  store: StoreProfile;
+  store?: StoreProfile;
   onRefreshData?: () => void;
   initialSearchTerm?: string;
 }
 
 export const UsersManagementView: React.FC<UsersManagementViewProps> = ({
   currentUserRole,
-  store,
   onRefreshData,
   initialSearchTerm = ''
 }) => {

@@ -1,13 +1,13 @@
 import React, { useState, useMemo } from 'react';
 import { 
   Car, ShoppingCart, DollarSign, Clock, TrendingUp, 
-  Plus, ArrowRight, UserCheck, CheckCircle2, 
-  AlertTriangle, Filter, Calendar, Users, Percent, Award
+  Plus, ArrowRight, 
+  AlertTriangle, Calendar, Users, Percent, Award
 } from 'lucide-react';
 import { Vehicle, Sale, Salesperson, UserRole } from '../../types';
 import { 
   formatCurrency, formatDate, computePreSaleTotalCost, 
-  computeNetProfit, computeMarginPercent, getMonthYearKey, getMonthName 
+  computeNetProfit, getMonthYearKey, getMonthName 
 } from '../../utils/formatters';
 import { PageHeader, KpiCard, StatusBadge } from '../common/DesignSystem';
 
@@ -26,7 +26,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   vehicles = [],
   sales = [],
   salespeople = [],
-  store,
   userRole = 'gestor',
   onNavigateTab,
   onNavigateToTab,

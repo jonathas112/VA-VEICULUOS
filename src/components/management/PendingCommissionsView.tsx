@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { 
-  Clock, CheckCircle2, DollarSign, ShieldAlert, 
-  ArrowRight, UserCheck, Car, Calendar, AlertCircle, TrendingUp
+  Clock, CheckCircle2, DollarSign, 
+  UserCheck, Car, AlertCircle
 } from 'lucide-react';
 import { Sale, Vehicle, UserRole } from '../../types';
 import { 

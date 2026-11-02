@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { 
-  X, Printer, Copy, Check, FileText, Download, 
-  Eye, RefreshCw, ShieldCheck, AlertTriangle 
+  X, Printer, Copy, Check, FileText, 
+  ShieldCheck, AlertTriangle 
 } from 'lucide-react';
 import { Vehicle, FormerOwner, Sale, StoreProfile, ContractTemplate } from '../../types';
 import { renderTemplate } from '../../utils/templateEngine';

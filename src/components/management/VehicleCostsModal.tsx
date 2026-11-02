@@ -1,12 +1,11 @@
 import React, { useState } from 'react';
 import { 
-  X, Plus, DollarSign, Calculator, Trash2, ShieldCheck, 
-  AlertTriangle, Wrench, Sparkles, FileText, CheckCircle2, TrendingUp, AlertCircle
+  X, Plus, Calculator, Wrench
 } from 'lucide-react';
 import { Vehicle, VehicleExpense } from '../../types';
 import { 
   formatCurrency, computeAcquisitionCost, 
-  computePatioExpenses, computePreSaleTotalCost, computeMarginPercent 
+  computePatioExpenses, computeMarginPercent 
 } from '../../utils/formatters';
 
 interface VehicleCostsModalProps {

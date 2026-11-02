@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   X, ShoppingCart, UserCheck, ShieldCheck, AlertTriangle, 
-  DollarSign, FileText, Check, AlertCircle, Building2, CreditCard
+  DollarSign, FileText, Check, AlertCircle, Building2
 } from 'lucide-react';
 import { 
   Vehicle, Sale, Financier, Salesperson, ContractTemplate, 
@@ -22,7 +22,7 @@ interface VehicleSaleModalProps {
   templates: ContractTemplate[];
   userRole: UserRole;
   activeSeller: Salesperson | null;
-  store: StoreProfile;
+  store?: StoreProfile;
   onCompleteSale: (sale: Sale, vehicle: Vehicle) => void;
 }
 
@@ -35,7 +35,6 @@ export const VehicleSaleModal: React.FC<VehicleSaleModalProps> = ({
   templates,
   userRole,
   activeSeller,
-  store,
   onCompleteSale
 }) => {
   const totalVehicleCost = vehicle ? computePreSaleTotalCost(vehicle) : 0;
@@ -491,6 +490,17 @@ export const VehicleSaleModal: React.FC<VehicleSaleModalProps> = ({
                     </option>
                   ))}
                 </select>
+              </div>
+
+              <div>
+                <label className="text-xs text-neutral-400 block mb-1">Observações da Venda</label>
+                <textarea
+                  rows={2}
+                  value={observacoes}
+                  onChange={(e) => setObservacoes(e.target.value)}
+                  placeholder="Notas adicionais sobre a negociação comercial, garantia, etc."
+                  className="w-full bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 text-xs text-white focus:border-amber-500 focus:outline-none resize-none"
+                />
               </div>
             </div>
           </div>

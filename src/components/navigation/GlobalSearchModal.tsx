@@ -1,8 +1,8 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { 
-  Search, X, Car, User, ShoppingCart, ArrowRight, ShieldCheck, 
+  Search, X, Car, User, ShoppingCart, ArrowRight, 
   Users, DollarSign, FileText, Settings, Sparkles, Building2, 
-  Clock, Phone, Mail, Award, CheckCircle2, ChevronRight, Hash
+  Clock, ChevronRight
 } from 'lucide-react';
 import { 
   Vehicle, FormerOwner, Sale, Salesperson, 

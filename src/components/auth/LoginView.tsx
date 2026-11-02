@@ -1,23 +1,20 @@
 import React, { useState } from 'react';
 import { 
   Lock, Mail, KeyRound, Eye, EyeOff, ShieldCheck, 
-  UserCheck, ArrowRight, Sparkles, AlertCircle, 
-  CheckCircle2, ArrowLeft, Shield, Car
+  UserCheck, ArrowRight, AlertCircle, ArrowLeft
 } from 'lucide-react';
-import { StoreProfile, SystemUser, UserRole, Salesperson } from '../../types';
+import { StoreProfile, SystemUser } from '../../types';
 import { BrandLogo } from '../common/BrandLogo';
 import { storageService } from '../../services/storage';
 
 interface LoginViewProps {
   store: StoreProfile;
-  salespeople: Salesperson[];
   onLoginSuccess: (user: SystemUser) => void;
   onOpenShowroom: () => void;
 }
 
 export const LoginView: React.FC<LoginViewProps> = ({
   store,
-  salespeople,
   onLoginSuccess,
   onOpenShowroom
 }) => {

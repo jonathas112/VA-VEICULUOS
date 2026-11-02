@@ -1,8 +1,8 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Users, Search, UserPlus, Phone, MapPin, 
-  Car, ShoppingCart, DollarSign, Calendar, MessageCircle, 
-  ArrowUpRight, Edit, X, Check, Eye, FileText
+  Car, ShoppingCart, MessageCircle, 
+  Edit, X, Eye
 } from 'lucide-react';
 import { FormerOwner, Vehicle, Sale, StoreProfile } from '../../types';
 import { formatCurrency, formatDate, maskCPF, maskPhone, maskCEP, isValidCPF, isValidPhone, isValidCEP } from '../../utils/formatters';
@@ -13,7 +13,7 @@ interface PersonsViewProps {
   owners: FormerOwner[];
   vehicles: Vehicle[];
   sales: Sale[];
-  store: StoreProfile;
+  store?: StoreProfile;
   onSaveOwner: (owner: FormerOwner) => void;
   onSelectVehicleHistory?: (vehicleId: string) => void;
   initialSearchTerm?: string;
@@ -23,9 +23,7 @@ export const PersonsView: React.FC<PersonsViewProps> = ({
   owners,
   vehicles,
   sales,
-  store,
   onSaveOwner,
-  onSelectVehicleHistory,
   initialSearchTerm = ''
 }) => {
   const [searchTerm, setSearchTerm] = useState(initialSearchTerm);

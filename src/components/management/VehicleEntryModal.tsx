@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { 
-  X, UserPlus, Car, DollarSign, ShieldAlert, FileCheck, 
-  Plus, Check, AlertCircle, Info, ChevronRight, Image as ImageIcon,
+  X, UserPlus, Car, DollarSign, 
+  Plus, Check, 
   Upload, Trash2
 } from 'lucide-react';
 import { 
@@ -9,7 +9,7 @@ import {
   DetranDebt, ContractTemplate, StoreProfile 
 } from '../../types';
 import { 
-  formatCurrency, maskCurrency, unmaskCurrency, 
+  maskCurrency, unmaskCurrency, 
   maskCPF, maskPhone, maskCEP, maskPlate, maskRenavam, 
   isValidCPF, isValidPhone, isValidCEP, isValidPlate, isValidRenavam, isValidYear 
 } from '../../utils/formatters';
@@ -22,7 +22,7 @@ interface VehicleEntryModalProps {
   onSaveOwner: (owner: FormerOwner) => FormerOwner;
   onSaveVehicle: (vehicle: Vehicle) => void;
   templates: ContractTemplate[];
-  store: StoreProfile;
+  store?: StoreProfile;
   onOpenReceipt: (vehicle: Vehicle, owner: FormerOwner) => void;
   vehicles?: Vehicle[];
 }
@@ -34,7 +34,6 @@ export const VehicleEntryModal: React.FC<VehicleEntryModalProps> = ({
   onSaveOwner,
   onSaveVehicle,
   templates,
-  store,
   onOpenReceipt,
   vehicles = []
 }) => {
@@ -67,7 +66,7 @@ export const VehicleEntryModal: React.FC<VehicleEntryModalProps> = ({
   const [placa, setPlaca] = useState('');
   const [chassi, setChassi] = useState('');
   const [renavam, setRenavam] = useState('');
-  const [cadastradoPor, setCadastradoPor] = useState('Gestor Geral');
+  const cadastradoPor = 'Gestor Geral';
   
   // Fotos (upload até 10 fotos)
   const [fotoUrl, setFotoUrl] = useState('');
@@ -548,6 +547,22 @@ export const VehicleEntryModal: React.FC<VehicleEntryModalProps> = ({
                   <option value="Manual">Manual</option>
                   <option value="CVT">CVT</option>
                   <option value="Automatizado">Automatizado</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs text-neutral-400 block mb-1">Combustível</label>
+                <select
+                  value={combustivel}
+                  onChange={(e) => setCombustivel(e.target.value as any)}
+                  className="w-full bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 text-xs text-white focus:border-amber-500 focus:outline-none"
+                >
+                  <option value="Flex">Flex</option>
+                  <option value="Gasolina">Gasolina</option>
+                  <option value="Etanol">Etanol</option>
+                  <option value="Diesel">Diesel</option>
+                  <option value="Híbrido">Híbrido</option>
+                  <option value="Elétrico">Elétrico</option>
                 </select>
               </div>
 

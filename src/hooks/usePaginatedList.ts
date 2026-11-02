@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 
 export interface UsePaginatedListOptions<T> {
   // Array completo de itens (caso local/híbrido) OU função assíncrona para puxar do banco

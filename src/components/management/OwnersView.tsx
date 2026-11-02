@@ -1,12 +1,12 @@
 import React, { useState, useMemo } from 'react';
 import { 
   Users, UserPlus, Search, Phone, MapPin, 
-  CreditCard, Calendar, Car, ShoppingCart, ArrowDownLeft, 
-  ArrowUpRight, Clock, Plus, X, ShieldCheck
+  Car, ShoppingCart, ArrowDownLeft, 
+  ArrowUpRight, Plus, X
 } from 'lucide-react';
 import { FormerOwner, Vehicle, Sale } from '../../types';
-import { formatCurrency, formatDate, maskCPF, maskPhone, isValidCPF, isValidPhone } from '../../utils/formatters';
-import { PageHeader, KpiCard, StatusBadge, formStyles } from '../common/DesignSystem';
+import { formatCurrency, maskCPF, maskPhone, isValidCPF, isValidPhone } from '../../utils/formatters';
+import { PageHeader, KpiCard, formStyles } from '../common/DesignSystem';
 
 interface OwnersViewProps {
   owners: FormerOwner[];

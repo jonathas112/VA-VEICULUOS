@@ -1,7 +1,7 @@
 import { 
   StoreProfile, Financier, Salesperson, ContractTemplate, 
   FormerOwner, Vehicle, Sale, VehicleExpense, PostSaleCost,
-  AuditActionType, SystemUser, UserRole 
+  AuditActionType, SystemUser 
 } from '../types';
 import { 
   SEED_STORE, SEED_FINANCIERS, SEED_SALESPEOPLE, 

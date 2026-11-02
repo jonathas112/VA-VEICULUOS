@@ -2,7 +2,7 @@ import React from 'react';
 import { 
   Car, ShieldCheck, LayoutDashboard, ShoppingCart, 
   Users, DollarSign, Settings, Clock, Sparkles, UserCheck, 
-  History, ShieldAlert, FileText
+  History, ShieldAlert
 } from 'lucide-react';
 import { UserRole, Salesperson, StoreProfile } from '../types';
 import { BrandLogo } from './common/BrandLogo';

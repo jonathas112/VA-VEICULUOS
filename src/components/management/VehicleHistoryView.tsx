@@ -1,8 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { 
-  History, Search, Filter, ChevronLeft, ChevronRight, 
-  Car, Calendar, User, DollarSign, Wrench, ShieldCheck, 
-  CheckCircle, FileText, ArrowRight, X, Clock, Eye, AlertCircle
+  History, Search, 
+  Car, CheckCircle, FileText, X, Clock, Eye
 } from 'lucide-react';
 import { Vehicle, FormerOwner, Sale, StoreProfile } from '../../types';
 import { 
@@ -17,7 +16,7 @@ interface VehicleHistoryViewProps {
   vehicles: Vehicle[];
   owners: FormerOwner[];
   sales: Sale[];
-  store: StoreProfile;
+  store?: StoreProfile;
   onOpenContractModal?: (vehicle: Vehicle, type: 'compra' | 'venda') => void;
   onSelectOwner?: (ownerId: string) => void;
 }
@@ -26,9 +25,7 @@ export const VehicleHistoryView: React.FC<VehicleHistoryViewProps> = ({
   vehicles,
   owners,
   sales,
-  store,
-  onOpenContractModal,
-  onSelectOwner
+  onOpenContractModal
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<'todos' | 'em_estoque' | 'vendido'>('todos');
