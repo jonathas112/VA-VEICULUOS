@@ -110,6 +110,9 @@ function safeGetItem(key: string): string | null {
   if (memoryFallbackStore.has(key)) {
     return memoryFallbackStore.get(key) ?? null;
   }
+  if (typeof localStorage === 'undefined') {
+    return null;
+  }
   try {
     return localStorage.getItem(key);
   } catch {
@@ -122,6 +125,10 @@ function hasExplicitLocalKey(key: string): boolean {
 }
 
 function safeSetItem(key: string, value: string): 'localStorage' | 'memory' {
+  if (typeof localStorage === 'undefined') {
+    memoryFallbackStore.set(key, value);
+    return 'memory';
+  }
   try {
     localStorage.setItem(key, value);
     memoryFallbackStore.delete(key);
@@ -144,6 +151,29 @@ function safeSetItem(key: string, value: string): 'localStorage' | 'memory' {
     }
   }
 }
+
+const CURRENT_DATA_VERSION = 'vaveiculos_presentation_2026_11_v3';
+const DATA_VERSION_KEY = 'vaveiculos_cache_data_version';
+
+function checkAndInvalidateLegacyCache(): void {
+  try {
+    const existingVer = safeGetItem(DATA_VERSION_KEY);
+    if (existingVer !== CURRENT_DATA_VERSION) {
+      safeSetItem(DATA_VERSION_KEY, CURRENT_DATA_VERSION);
+      safeSetItem(STORAGE_KEYS.VEHICLES, JSON.stringify(SEED_VEHICLES));
+      safeSetItem(STORAGE_KEYS.PUBLIC_VEHICLES, JSON.stringify(SEED_VEHICLES.map(sanitizePublicVehicle)));
+      safeSetItem(STORAGE_KEYS.STORE, JSON.stringify(SEED_STORE));
+      safeSetItem(STORAGE_KEYS.FINANCIERS, JSON.stringify(SEED_FINANCIERS));
+      safeSetItem(STORAGE_KEYS.SALESPEOPLE, JSON.stringify(SEED_SALESPEOPLE));
+      safeSetItem(STORAGE_KEYS.USERS, JSON.stringify(SEED_USERS));
+      safeSetItem(STORAGE_KEYS.OWNERS, JSON.stringify(SEED_OWNERS));
+      safeSetItem(STORAGE_KEYS.SALES, JSON.stringify(SEED_SALES));
+    }
+  } catch {
+    // Silencioso em caso de restrição de storage
+  }
+}
+checkAndInvalidateLegacyCache();
 
 function assertNoVersionConflict(
   entityLabel: string,
@@ -1144,6 +1174,10 @@ export const storageService = {
     safeSetItem(STORAGE_KEYS.VEHICLES, JSON.stringify(vehicles));
     safeSetItem(STORAGE_KEYS.PUBLIC_VEHICLES, JSON.stringify(vehicles.map(sanitizePublicVehicle)));
   },
+  savePublicVehicles(vehicles: Vehicle[]): void {
+    const sanitized = vehicles.map(sanitizePublicVehicle);
+    safeSetItem(STORAGE_KEYS.PUBLIC_VEHICLES, JSON.stringify(sanitized));
+  },
   addVehicle(vehicle: Vehicle, user = 'Gestor Geral'): void {
     validateVehicleIntegrity(vehicle);
     const list = this.getVehicles();
@@ -2015,15 +2049,21 @@ export const storageService = {
   // Sincronização híbrida resiliente com Firebase Firestore (preserva edições offline via OCC / merge por versão)
   async syncFromFirestore(isStaffAuthenticated: boolean = false, userRole: UserRole = 'vendedor'): Promise<{ vehicles: number; owners: number; sales: number }> {
     try {
-      // Visitante anônimo da Vitrine Pública: baixa apenas vehicles_public (sem valorPago/custos) e perfil público
+      // Visitante anônimo da Vitrine Pública: baixa vehicles_public (ou fallback de vehicles) e perfil público
       if (!isStaffAuthenticated) {
-        const [remotePublicVehicles, remoteStore] = await Promise.all([
+        const [remotePublicVehicles, remoteVehiclesFallback, remoteStore] = await Promise.all([
           firebaseDb.getPublicVehicles(),
+          firebaseDb.getVehicles(),
           firebaseDb.getStoreProfile()
         ]);
 
-        if (remotePublicVehicles.length > 0) {
-          safeSetItem(STORAGE_KEYS.PUBLIC_VEHICLES, JSON.stringify(remotePublicVehicles));
+        const bestVehicles = remotePublicVehicles.length > 0
+          ? remotePublicVehicles
+          : (remoteVehiclesFallback.length > 0 ? remoteVehiclesFallback.map(sanitizePublicVehicle) : []);
+
+        if (bestVehicles.length > 0) {
+          safeSetItem(STORAGE_KEYS.PUBLIC_VEHICLES, JSON.stringify(bestVehicles));
+          safeSetItem(STORAGE_KEYS.VEHICLES, JSON.stringify(bestVehicles));
         }
         if (remoteStore) {
           const hasPendingLocalStore = getPendingSyncQueue().some(
@@ -2035,7 +2075,7 @@ export const storageService = {
         }
 
         return {
-          vehicles: remotePublicVehicles.length,
+          vehicles: bestVehicles.length,
           owners: 0,
           sales: 0
         };

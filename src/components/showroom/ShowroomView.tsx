@@ -14,13 +14,16 @@ interface ShowroomViewProps {
   vehicles: Vehicle[];
   store: StoreProfile;
   onEnterManagement: () => void;
+  onRefreshCatalog?: () => Promise<void> | void;
 }
 
 export const ShowroomView: React.FC<ShowroomViewProps> = ({
   vehicles,
   store,
-  onEnterManagement
+  onEnterManagement,
+  onRefreshCatalog
 }) => {
+  const [isRefreshing, setIsRefreshing] = useState(false);
   // Filtro de Texto
   const [searchTerm, setSearchTerm] = useState('');
   
@@ -589,6 +592,27 @@ export const ShowroomView: React.FC<ShowroomViewProps> = ({
                 <option value="km_menor">Menor KM</option>
               </select>
             </div>
+
+            {/* Atualizar Catálogo via Firestore */}
+            {onRefreshCatalog && (
+              <button
+                type="button"
+                onClick={async () => {
+                  setIsRefreshing(true);
+                  try {
+                    await onRefreshCatalog();
+                  } finally {
+                    setTimeout(() => setIsRefreshing(false), 500);
+                  }
+                }}
+                disabled={isRefreshing}
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-[8px] bg-[#17171A] hover:bg-[#202024] border border-[#2D2D32] hover:border-[#D4130D]/50 text-xs font-semibold text-[#CAC9CA] hover:text-white transition-colors cursor-pointer disabled:opacity-50"
+                title="Sincronizar catálogo diretamente com o banco de dados na nuvem (Firestore)"
+              >
+                <RotateCcw className={`w-3.5 h-3.5 text-[#D4130D] ${isRefreshing ? 'animate-spin' : ''}`} />
+                <span className="hidden sm:inline">{isRefreshing ? 'Sincronizando...' : 'Atualizar Catálogo'}</span>
+              </button>
+            )}
 
             {/* WhatsApp Direto */}
             <button

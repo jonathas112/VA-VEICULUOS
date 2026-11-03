@@ -25,7 +25,7 @@ import { LoginView } from './components/auth/LoginView';
 import { UsersManagementView } from './components/management/UsersManagementView';
 
 import { storageService } from './services/storage';
-import { firebaseAuth } from './services/firebase';
+import { firebaseAuth, firebaseDb } from './services/firebase';
 import {
   createStaffSession,
   loadVerifiedStaffSession,
@@ -258,14 +258,40 @@ export default function App() {
     }
   };
 
-  // Initial load & Firestore background sync (respeitando menor privilégio e autenticação)
+  // Initial load, Firestore background sync e escuta em tempo real da nuvem
   useEffect(() => {
     refreshData(isStaffAuthenticated, userRole);
+
+    // 1. Escuta em tempo real para vitrine pública diretamente no Firestore
+    const unsubPublic = firebaseDb.subscribeToPublicVehicles((liveList) => {
+      if (liveList && liveList.length > 0) {
+        setPublicVehicles(liveList);
+        storageService.savePublicVehicles(liveList);
+      }
+    });
+
+    // 2. Escuta em tempo real para equipe autenticada
+    let unsubVehicles: (() => void) | undefined;
+    if (isStaffAuthenticated) {
+      unsubVehicles = firebaseDb.subscribeToVehicles((liveList) => {
+        if (liveList && liveList.length > 0) {
+          setVehicles(liveList);
+          storageService.saveVehicles(liveList);
+        }
+      });
+    }
+
+    // 3. Sincronização completa inicial em segundo plano
     storageService.syncFromFirestore(isStaffAuthenticated, userRole).then(() => {
       refreshData(isStaffAuthenticated, userRole);
     }).catch(err => {
       console.warn('Sincronização em segundo plano:', err);
     });
+
+    return () => {
+      unsubPublic();
+      if (unsubVehicles) unsubVehicles();
+    };
   }, [isStaffAuthenticated, userRole]);
 
   const activeUserName = userRole === 'gestor'
@@ -648,6 +674,23 @@ export default function App() {
             vehicles={publicVehicles}
             store={store}
             onEnterManagement={handleEnterManagement}
+            onRefreshCatalog={async () => {
+              try {
+                const [pubList, fullList] = await Promise.all([
+                  firebaseDb.getPublicVehicles(),
+                  firebaseDb.getVehicles()
+                ]);
+                const best = pubList.length > 0 ? pubList : fullList;
+                if (best.length > 0) {
+                  setPublicVehicles(best);
+                  storageService.savePublicVehicles(best);
+                }
+                await storageService.syncFromFirestore(isStaffAuthenticated, userRole);
+                refreshData(isStaffAuthenticated, userRole);
+              } catch (err) {
+                console.warn('Erro ao atualizar catálogo via nuvem:', err);
+              }
+            }}
           />
         </div>
       ) : (

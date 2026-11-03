@@ -204,8 +204,63 @@ export const LoginView: React.FC<LoginViewProps> = ({
             </button>
           </form>
 
+          {/* Quick Fill Demo Credentials para Apresentação */}
+          <div className="pt-2 border-t border-[#2D2D32]/80">
+            <span className="text-[10px] uppercase font-bold text-[#A7A7AB] tracking-wider block mb-2 text-center">
+              Credenciais Prontas para Apresentação
+            </span>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setLoginInput('admin@vaveiculos.com.br');
+                  setPassword('Va@2026!');
+                  setErrorMsg('');
+                }}
+                className="p-2.5 rounded-[10px] bg-[#17171A] hover:bg-[#202024] border border-[#2D2D32] hover:border-[#D4130D]/60 text-left transition-colors cursor-pointer group"
+                title="Clique para preencher credenciais de Gestor Geral"
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs font-bold text-[#F5F5F5] group-hover:text-[#D4130D] transition-colors">
+                    1. Gestor Geral
+                  </span>
+                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-[#D4130D]/20 text-[#D4130D] font-bold">
+                    Acesso Total
+                  </span>
+                </div>
+                <span className="text-[10px] text-[#CAC9CA] block truncate">admin@vaveiculos.com.br</span>
+                <span className="text-[9px] text-[#8E8D92] block mt-0.5">DRE, Auditoria, Comissões, Estoque</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setLoginInput('carlos@vaveiculos.com.br');
+                  setPassword('Va@2026!');
+                  setErrorMsg('');
+                }}
+                className="p-2.5 rounded-[10px] bg-[#17171A] hover:bg-[#202024] border border-[#2D2D32] hover:border-amber-500/60 text-left transition-colors cursor-pointer group"
+                title="Clique para preencher credenciais de Vendedor"
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs font-bold text-[#F5F5F5] group-hover:text-amber-400 transition-colors">
+                    2. Vendedor (Carlos)
+                  </span>
+                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 font-bold">
+                    Comercial
+                  </span>
+                </div>
+                <span className="text-[10px] text-[#CAC9CA] block truncate">carlos@vaveiculos.com.br</span>
+                <span className="text-[9px] text-[#8E8D92] block mt-0.5">Estoque, Vendas, Contratos</span>
+              </button>
+            </div>
+            <p className="text-[10px] text-[#8E8D92] text-center mt-2">
+              Senha padrão de demonstração: <strong className="text-white font-mono">Va@2026!</strong>
+            </p>
+          </div>
+
           {/* Aviso Institucional de Segurança */}
-          <div className="pt-4 border-t border-[#2D2D32] text-center">
+          <div className="pt-2 border-t border-[#2D2D32]/60 text-center">
             <p className="text-[11px] text-[#68686E]">
               Acesso monitorado e protegido por hash criptográfico e sessão assinada. Em caso de perda de senha, solicite redefinição ao Gestor Geral.
             </p>

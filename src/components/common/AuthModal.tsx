@@ -198,6 +198,35 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             </div>
           </div>
 
+          {/* Quick Chips para Apresentação */}
+          <div className="flex items-center justify-between gap-2 pt-1 text-[10px]">
+            <span className="text-[#8E8D92]">Preenchimento rápido:</span>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setEmailInput('admin@vaveiculos.com.br');
+                  setPassword('Va@2026!');
+                  setErrorMsg('');
+                }}
+                className="px-2 py-0.5 rounded bg-[#D4130D]/20 hover:bg-[#D4130D]/30 text-[#D4130D] border border-[#D4130D]/30 font-semibold cursor-pointer transition-colors"
+              >
+                Gestor
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setEmailInput('carlos@vaveiculos.com.br');
+                  setPassword('Va@2026!');
+                  setErrorMsg('');
+                }}
+                className="px-2 py-0.5 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 border border-amber-500/30 font-semibold cursor-pointer transition-colors"
+              >
+                Vendedor
+              </button>
+            </div>
+          </div>
+
           <div className="pt-2 flex items-center justify-end gap-3">
             <button
               type="button"

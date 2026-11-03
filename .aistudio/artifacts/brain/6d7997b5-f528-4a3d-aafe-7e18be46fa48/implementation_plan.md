@@ -1,102 +1,58 @@
-# Plano de Correção e Blindagem Sistêmica (VA Veículos)
+# Plano de Implementação: Conexão em Tempo Real com Firestore e Atualização Automática de Veículos
 
-Plano de ação para correção individual e sequencial de cada uma das falhas técnicas e conflitos de integridade detectados no laudo de auditoria do sistema VA Veículos.
+## 1. Diagnóstico do Problema Raiz
 
----
+A auditoria da comunicação com o banco de dados identificou três fatores que explicam por que os veículos exibidos na tela ainda são os antigos:
 
-### Decisões e Diretrizes de Engenharia
-
-> [!IMPORTANT]
-> - Cada correção será realizada em sua respectiva camada (utilitários, componentes e camada de persistência), sem alterar os fluxos aprovados no laudo.
-> - Nenhum dado existente em estoque, vendas ou histórico será perdido.
-> - Ao término das correções, o script de auditoria automatizada (`scripts/run_system_audit.ts`) será reexecutado para validar o atestado de 100% de aprovação (zero FAIL).
+1. **Coleção `vehicles_public` Vazia no Firestore:** A coleção `vehicles_public` na base `va-veiculos` possui atualmente zero documentos cadastrados na nuvem.
+2. **Fallback Silencioso para Cache Local Antigo:** No método `syncFromFirestore()` (`src/services/storage.ts`), a verificação `if (remotePublicVehicles.length > 0)` não atualizava o armazenamento do navegador caso a nuvem estivesse vazia, mantendo congelados no `localStorage` do usuário os veículos gravados em sessões anteriores.
+3. **Regras de Permissão de Leitura:** Em `firestore.rules`, a coleção `vehicles` completa exige `isStaff()` (`request.auth != null`), bloqueando visitantes anônimos ou usuários que ainda não autenticaram no provedor de nuvem, impedindo que a vitrine receba dados caso a coleção pública não esteja populada.
 
 ---
 
-## 1. Visão Geral das Etapas de Correção
+## 2. Solução Proposta
 
-O plano está estruturado para corrigir as pendências em ordem de prioridade de integridade:
-
-```
-┌────────────────────────────────────────────────────────┐
-│ ETAPA 1: Utilitário de Extenso Monetário              │
-│ - Correção de negativos e centavos em numberToWords    │
-└──────────────────────────┬─────────────────────────────┘
-                           │
-┌──────────────────────────▼─────────────────────────────┐
-│ ETAPA 2: Blindagem contra NaN nos Formulários          │
-│ - Checagem estrita de isNaN() em custos e vendas       │
-└──────────────────────────┬─────────────────────────────┘
-                           │
-┌──────────────────────────▼─────────────────────────────┐
-│ ETAPA 3: Bloqueio de Placas Duplicadas                 │
-│ - Validação no VehicleEntryModal e storageService      │
-└──────────────────────────┬─────────────────────────────┘
-                           │
-┌──────────────────────────▼─────────────────────────────┐
-│ ETAPA 4: Trava contra Re-venda de Veículo Vendido      │
-│ - Verificação no VehicleSaleModal e storageService     │
-└──────────────────────────┬─────────────────────────────┘
-                           │
-┌──────────────────────────▼─────────────────────────────┐
-│ ETAPA 5: Proteção Contábil de Vendas Órfãs             │
-│ - Preservação de custos ao excluir veículos            │
-└──────────────────────────┬─────────────────────────────┘
-                           │
-┌──────────────────────────▼─────────────────────────────┐
-│ ETAPA 6: Validação de Consistência Entrada/Venda       │
-│ - Trava para valorEntrada <= valorVenda no modal       │
-└──────────────────────────┬─────────────────────────────┘
-                           │
-┌──────────────────────────▼─────────────────────────────┐
-│ ETAPA 7: Re-auditoria Automatizada & Certificação      │
-│ - Execução do script com 100% PASS                     │
-└────────────────────────────────────────────────────────┘
-```
+Implementar uma arquitetura onde o **Firestore é consultado prioritariamente**, garantindo que:
+- A vitrine pública leia os veículos diretamente do Firestore sem depender de sessão ou login;
+- Os dados remotos do Firestore atualizem automaticamente o estado da tela e sincronizem o cache local (`localStorage`);
+- A base na nuvem seja populada com todos os 9 veículos da apresentação;
+- Seja adicionada proteção contra dados obsoletos em cache no navegador.
 
 ---
 
-## 2. Detalhamento de Cada Correção
+## 3. Etapas de Execução
 
-### Etapa 1: Correção do Conversor de Valores por Extenso (`numberToWordsPtBr`)
-* **Problema identificado**: Valores negativos retornavam `" reais"` e centavos isolados (ex.: R$ 0,75) retornavam `" reais e setenta e cinco centavos"` com espaço inicial vazio.
-* **Ação**:
-  * Adicionar tratamento no início da função para números negativos: se `num < 0`, calcular o extenso de `Math.abs(num)` e prefixar com `"menos "`.
-  * Se a parte inteira for `0` e houver centavos (`num < 1`), retornar apenas os centavos por extenso (ex.: `"setenta e cinco centavos"`).
-  * Garantir compatibilidade com contratos, notas e recibos de compra e venda.
+### Etapa 1: Ajuste de Permissões no `firestore.rules` e Deploy
+- **Arquivo:** `/firestore.rules`
+- **Ações:**
+  - Garantir que a coleção `vehicles_public` tenha `allow read: if true;` irrestrito para vitrine pública.
+  - Permitir que a vitrine também possa consultar os veículos com status `'em_estoque'` em caso de transição direta, ou permitir gravação administrativa/seeding inicial.
+  - Executar o deploy imediato das regras via ferramenta `deploy_firebase`.
 
-### Etapa 2: Blindagem Estrita contra Valores `NaN` nos Formulários
-* **Problema identificado**: Validações como `valor <= 0` avaliam como `false` quando o valor é `NaN` no JavaScript, permitindo gravar despesas e vendas corrompidas.
-* **Ação**:
-  * Em `src/components/management/VehicleCostsModal.tsx`: substituir `if (!descricao || valor <= 0)` por `if (!descricao.trim() || isNaN(valor) || valor <= 0)`.
-  * Em `src/components/management/VehicleSaleModal.tsx`: substituir `if (valorVenda <= 0)` por `if (isNaN(valorVenda) || valorVenda <= 0)` e validar também `isNaN(valorEntrada) || valorEntrada < 0`.
-  * Em `src/components/management/PendingCommissionsView.tsx`: substituir `if (amount < 0)` por `if (isNaN(amount) || amount < 0)`.
+### Etapa 2: Povoamento Real no Firestore (`va-veiculos`)
+- **Arquivo / Script:** `scripts/seed_firestore_live.ts`
+- **Ações:**
+  - Gravar diretamente no Firestore os 9 veículos na coleção `vehicles_public` (sem dados confidenciais de aquisição) e na coleção `vehicles`.
+  - Gravar os dados do perfil da loja (`store_config/main`).
+  - Executar o script e validar que `getDocs(collection(db, 'vehicles_public'))` retorna os 9 veículos ativos.
 
-### Etapa 3: Validação e Bloqueio de Placas Duplicadas no Estoque
-* **Problema identificado**: O `VehicleEntryModal` não recebia os veículos existentes e o `storageService.addVehicle` permitia cadastrar dois veículos diferentes com a mesma placa.
-* **Ação**:
-  * Em `src/components/management/VehicleEntryModal.tsx`: passar prop `vehicles: Vehicle[]` e adicionar checagem de duplicidade:
-    * Se `vehicles.some(v => v.status === 'em_estoque' && normalizePlate(v.placa) === normalizePlate(placa))`, emitir alerta impeditivo informando que a placa já está cadastrada no estoque da loja.
-  * Em `src/services/storage.ts`: no método `addVehicle`, incluir salvaguarda para não duplicar veículo ativo de mesma placa.
+### Etapa 3: Leitura em Tempo Real e Reconciliação no Frontend
+- **Arquivos:** `src/services/firebase.ts`, `src/services/storage.ts` e `src/App.tsx`
+- **Ações:**
+  - Criar método de listener/busca em tempo real (`fetchLiveVehicles` / `subscribeToPublicVehicles`) no `firebase.ts`.
+  - No `App.tsx`, priorizar a renderização imediata vinda do Firestore assim que o componente é montado.
+  - No `storage.ts`, caso os dados do Firestore sejam recebidos com sucesso, atualizar imediatamente o estado de `publicVehicles` e reescrever o cache do `localStorage`, substituindo os dados defasados.
+  - Adicionar controle de versão de dados (`DATA_VERSION = '2026.11.03.v2'`) para invalidar e limpar automaticamente caches locais legados quando o usuário abrir a página.
 
-### Etapa 4: Trava contra Re-venda de Veículo Já Vendido
-* **Problema identificado**: O `VehicleSaleModal` não validava o status atual do veículo, abrindo brecha para sobrescrever vendas.
-* **Ação**:
-  * Em `src/components/management/VehicleSaleModal.tsx`: no início do `handleSubmit`, verificar se `vehicle.status === 'vendido'`. Caso positivo, alertar e cancelar o envio.
-  * Em `src/services/storage.ts`: no método `addSale`, verificar se o veículo em questão já consta como vendido antes de registrar duplicidade.
+### Etapa 4: Indicador Visual e Botão de Atualização Manual
+- **Arquivos:** `src/components/showroom/ShowroomView.tsx` e `src/components/navigation/Topbar.tsx`
+- **Ações:**
+  - Adicionar um botão discreto de "Atualizar Catálogo" na vitrine pública e no topo da gestão, permitindo ao usuário/apresentador forçar a releitura imediata do Firestore com 1 clique caso necessário.
+  - Exibir badge sutil indicando "Catálogo Conectado à Nuvem".
 
-### Etapa 5: Proteção Contábil contra Vendas Órfãs e Exclusão Indevida
-* **Problema identificado**: A exclusão de um veículo que já possui histórico de venda zera seus custos de aquisição e pátio no `FinancialView`, inflando artificialmente o lucro líquido do período.
-* **Ação**:
-  * No `storageService.deleteVehicle`: verificar se o veículo possui vendas associadas em `getSales()`. Se possuir, bloquear a exclusão direta com aviso de que veículos vendidos devem ser mantidos para integridade fiscal e contábil da loja (ou preservar o snapshot de custo na própria venda).
-  * No `FinancialView.tsx`: adicionar fallback contábil seguro para caso um veículo antigo não seja localizado, garantindo que o lucro não seja distorcido.
+---
 
-### Etapa 6: Consistência nos Valores de Financiamento e Entrada
-* **Problema identificado**: Permitir `valorEntrada > valorVenda` sem aviso de inconsistência contábil.
-* **Ação**:
-  * No `VehicleSaleModal.tsx`: adicionar validação no `handleSubmit` impedindo que a entrada informada seja estritamente superior ao valor de venda negociado, orientando o usuário a ajustar o valor.
-
-### Etapa 7: Re-execução da Auditoria e Atestado Final
-* **Ação**:
-  * Atualizar o script de auditoria `scripts/run_system_audit.ts` com as novas proteções.
-  * Executar os testes via `npx tsx` e certificar que todos os 80+ testes atinjam status `PASS` com 0 erros e 0 conflitos.
+## 4. Validação e Testes
+1. Executar consulta ao Firestore via Node.js para garantir que `vehicles_public` retorna 9 registros.
+2. Limpar o cache local e verificar se a vitrine renderiza instantaneamente os 9 veículos novos (incluindo BMW 320i, Hilux SRX, Jeep Compass, Fiat Pulse, MT-07, etc.).
+3. Executar `lint_applet` e `compile_applet` para assegurar build sem erros.

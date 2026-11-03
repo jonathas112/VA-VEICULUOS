@@ -1,6 +1,6 @@
 {
-  "summary": "Plano detalhado de correção individual dos erros e conflitos detectados no laudo de auditoria: resolução do extenso monetário para valores negativos e centavos puros, blindagem estrita contra valores NaN nos formulários, validação e bloqueio de placas veiculares duplicadas no estoque, proteção contábil contra vendas órfãs em veículos excluídos, trava de segurança contra re-venda de veículos já vendidos, e consistência de pagamentos.",
-  "updatedAt": "2026-10-14T12:08:02.697390707Z",
+  "summary": "Plano de implementação para conectar o sistema ao Firestore em tempo real, ajustar permissões de leitura pública e repopular os veículos na nuvem com atualização automática do cache local.",
+  "updatedAt": "2026-11-03T14:33:06.836582678Z",
   "requestFeedback": true,
   "userFacing": true
 }

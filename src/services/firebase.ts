@@ -10,7 +10,9 @@ import {
   getDocs, 
   deleteDoc,
   runTransaction,
-  serverTimestamp 
+  serverTimestamp,
+  onSnapshot,
+  Unsubscribe 
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 import { Vehicle, FormerOwner, Sale, StoreProfile, AuditLog, ContractTemplate, Financier, Salesperson, SystemUser } from '../types';
@@ -305,6 +307,54 @@ export const firebaseDb = {
     } catch (e) {
       handleFirestoreError(e, OperationType.LIST, 'vehicles_public');
       return [];
+    }
+  },
+
+  // Escuta em tempo real da vitrine pública de veículos
+  subscribeToPublicVehicles(onUpdate: (vehicles: Vehicle[]) => void): Unsubscribe {
+    try {
+      if (forcedOfflineMode || !db) {
+        return () => {};
+      }
+      return onSnapshot(
+        collection(db, 'vehicles_public'),
+        (snapshot) => {
+          markSyncOnline();
+          const list = snapshot.docs.map(d => sanitizePublicVehicle(d.data() as Vehicle));
+          if (list.length > 0) {
+            onUpdate(list);
+          }
+        },
+        (err) => {
+          handleFirestoreError(err, OperationType.LIST, 'vehicles_public');
+        }
+      );
+    } catch {
+      return () => {};
+    }
+  },
+
+  // Escuta em tempo real do catálogo completo de veículos para equipe
+  subscribeToVehicles(onUpdate: (vehicles: Vehicle[]) => void): Unsubscribe {
+    try {
+      if (forcedOfflineMode || !db) {
+        return () => {};
+      }
+      return onSnapshot(
+        collection(db, 'vehicles'),
+        (snapshot) => {
+          markSyncOnline();
+          const list = snapshot.docs.map(d => d.data() as Vehicle);
+          if (list.length > 0) {
+            onUpdate(list);
+          }
+        },
+        (err) => {
+          handleFirestoreError(err, OperationType.LIST, 'vehicles');
+        }
+      );
+    } catch {
+      return () => {};
     }
   },
 

@@ -315,6 +315,91 @@ export const SEED_VEHICLES: Vehicle[] = [
     ]
   },
   {
+    id: 'veh_hilux_srx',
+    tipo: 'carro',
+    marca: 'Toyota',
+    modelo: 'Hilux',
+    versao: 'SRX 2.8 16V 4x4 Diesel Aut.',
+    anoFabricacao: 2023,
+    anoModelo: 2024,
+    cor: 'Prata Névoa',
+    combustivel: 'Diesel',
+    cambio: 'Automático',
+    quilometragem: 26000,
+    placa: 'HLX-4A23',
+    chassi: '8AJBA3CD4P1928374',
+    renavam: '01492837461',
+    categoriaComercial: 'venda',
+    status: 'em_estoque',
+    fotos: [
+      'https://images.unsplash.com/photo-1559416523-140ddc3d238c?auto=format&fit=crop&w=1200&q=80',
+      'https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&w=1200&q=80'
+    ],
+    antigoDonoId: 'owner_marcos',
+    dataEntrada: '2026-09-01T10:00:00Z',
+    valorPago: 235000,
+    debitoDetran: {
+      temDebito: false,
+      valor: 0,
+      quemArca: 'nenhum'
+    },
+    reciboCompraGerado: true,
+    modeloReciboCompraId: 'recibo_compra_veiculo',
+    valorAnunciado: 264900,
+    descricaoDestaques: [
+      'Tração 4x4 com reduzida e bloqueio traseiro',
+      'Sistema de som Premium JBL com 8 alto-falantes',
+      'Bancos em couro ventilados e ajuste elétrico',
+      'Capota marítima e santo antônio originais',
+      'Único dono com revisões na concessionária'
+    ],
+    custosPatio: [
+      { id: 'exp_hlx_1', data: '2026-09-02', categoria: 'lavagem_estetica', descricao: 'Lavagem técnica de chassi e polimento', valor: 450 }
+    ]
+  },
+  {
+    id: 'veh_pulse_audace',
+    tipo: 'carro',
+    marca: 'Fiat',
+    modelo: 'Pulse',
+    versao: 'Audace Turbo 200 Flex Aut.',
+    anoFabricacao: 2023,
+    anoModelo: 2023,
+    cor: 'Cinza Strato c/ Teto Preto',
+    combustivel: 'Flex',
+    cambio: 'CVT',
+    quilometragem: 19500,
+    placa: 'PLS-9F23',
+    chassi: '9BD363A2NP0987654',
+    renavam: '01583920194',
+    categoriaComercial: 'venda',
+    status: 'em_estoque',
+    fotos: [
+      'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?auto=format&fit=crop&w=1200&q=80'
+    ],
+    antigoDonoId: 'owner_renata',
+    dataEntrada: '2026-09-05T15:00:00Z',
+    valorPago: 88000,
+    debitoDetran: {
+      temDebito: false,
+      valor: 0,
+      quemArca: 'nenhum'
+    },
+    reciboCompraGerado: true,
+    modeloReciboCompraId: 'recibo_compra_veiculo',
+    valorAnunciado: 99900,
+    descricaoDestaques: [
+      'Motor Turbo 200 com 130 cv e câmbio CVT de 7 marchas virtuais',
+      'Carregador de smartphone por indução',
+      'Frenagem autônoma de emergência e alerta de faixa',
+      'Quilometragem comprovada baixíssima (19.500 km)',
+      'Laudo cautelar 100% periciado'
+    ],
+    custosPatio: [
+      { id: 'exp_pls_1', data: '2026-09-06', categoria: 'lavagem_estetica', descricao: 'Higienização interna completa', valor: 250 }
+    ]
+  },
+  {
     id: 'veh_civic_touring',
     tipo: 'carro',
     marca: 'Honda',
