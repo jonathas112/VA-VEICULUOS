@@ -69,7 +69,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   // KPIs Calculations (em centavos inteiros exatos)
   const inStockVehicles = useMemo(() => (vehicles || []).filter(v => v.status === 'em_estoque'), [vehicles]);
   const totalStockInvestment = useMemo(() => sumCurrency(inStockVehicles.map(v => computePreSaleTotalCost(v))), [inStockVehicles]);
-  
+
+  const totalGrossRevenue = useMemo(
+    () => sumCurrency((sales || []).filter(s => s.statusVenda !== 'cancelada').map(s => s.valorVenda)),
+    [sales]
+  );
+
   const totalPeriodRevenue = useMemo(() => sumCurrency(filteredSales.map(s => s.valorVenda)), [filteredSales]);
   
   const totalPeriodNetProfit = useMemo(() => {
@@ -182,9 +187,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         {/* KPI 2: Faturamento Bruto */}
         <KpiCard
           title="Faturamento Bruto"
-          value={formatCurrency(totalPeriodRevenue)}
+          value={formatCurrency(totalGrossRevenue)}
           icon={DollarSign}
-          subtext="Volume total transacionado"
+          subtext="Todas as vendas concluídas"
         />
 
         {/* KPI 3: Lucro Líquido Real (Exclusivo Gestor) */}

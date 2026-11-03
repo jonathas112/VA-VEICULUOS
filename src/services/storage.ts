@@ -2114,13 +2114,19 @@ export const storageService = {
         );
         this.saveOwners(mergedOwners);
       }
-      if (remoteSales.length > 0) {
-        const mergedSales = mergeEntitiesByFreshness(
-          STORAGE_KEYS.SALES,
-          this.getSales(),
-          remoteSales,
-          'sales'
-        );
+      if (remoteSales !== null) {
+        const mergedSales = remoteSales.length > 0
+          ? mergeEntitiesByFreshness(
+              STORAGE_KEYS.SALES,
+              this.getSales(),
+              remoteSales,
+              'sales'
+            )
+          : this.getSales().filter(sale =>
+              getPendingSyncQueue().some(
+                op => op.collection === 'sales' && op.action === 'upsert' && op.entityId === sale.id
+              )
+            );
         this.saveSales(mergedSales);
       }
       if (remoteStore) {

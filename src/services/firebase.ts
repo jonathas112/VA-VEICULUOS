@@ -427,7 +427,7 @@ export const firebaseDb = {
     }
   },
 
-  async getSales(): Promise<Sale[]> {
+  async getSales(): Promise<Sale[] | null> {
     try {
       ensureOnlineReady('sales');
       const snap = await getDocs(collection(db, 'sales'));
@@ -435,7 +435,7 @@ export const firebaseDb = {
       return snap.docs.map(d => d.data() as Sale);
     } catch (e) {
       handleFirestoreError(e, OperationType.LIST, 'sales');
-      return [];
+      return null;
     }
   },
 
