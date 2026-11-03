@@ -4,8 +4,13 @@ import {
   Car, ShoppingCart, MessageCircle, 
   Edit, X, Eye
 } from 'lucide-react';
-import { FormerOwner, Vehicle, Sale, StoreProfile } from '../../types';
-import { formatCurrency, formatDate, maskCPF, maskPhone, maskCEP, isValidCPF, isValidPhone, isValidCEP } from '../../utils/formatters';
+import { FormerOwner, Vehicle, Sale, StoreProfile, UserRole } from '../../types';
+import {
+  formatCurrency, formatDate,
+  maskCPF, maskPhone, maskCEP, maskUF,
+  isValidCPF, isValidPhone, isValidCEP, isValidUF
+} from '../../utils/formatters';
+import { sanitizeInputText } from '../../utils/security';
 import { PaginationControls } from '../common/PaginationControls';
 import { usePaginatedList } from '../../hooks/usePaginatedList';
 
@@ -14,6 +19,7 @@ interface PersonsViewProps {
   vehicles: Vehicle[];
   sales: Sale[];
   store?: StoreProfile;
+  userRole?: UserRole;
   onSaveOwner: (owner: FormerOwner) => void;
   onSelectVehicleHistory?: (vehicleId: string) => void;
   initialSearchTerm?: string;
@@ -23,9 +29,11 @@ export const PersonsView: React.FC<PersonsViewProps> = ({
   owners,
   vehicles,
   sales,
+  userRole = 'vendedor',
   onSaveOwner,
   initialSearchTerm = ''
 }) => {
+  const isGestor = userRole === 'gestor';
   const [searchTerm, setSearchTerm] = useState(initialSearchTerm);
 
   useEffect(() => {
@@ -49,23 +57,25 @@ export const PersonsView: React.FC<PersonsViewProps> = ({
   const [formObservacoes, setFormObservacoes] = useState('');
   const [formError, setFormError] = useState('');
 
-  // Mapeamento de pessoas consolidadas
+  // Mapeamento de pessoas consolidadas O(1)
   const consolidatedPersons = useMemo(() => {
     // Unifica donos cadastrados com compradores únicos de vendas
     const personsMap = new Map<string, FormerOwner>();
+    const personsByCpf = new Map<string, FormerOwner>();
 
     owners.forEach(owner => {
       personsMap.set(owner.id, { ...owner });
+      const clean = owner.cpf.replace(/\D/g, '');
+      if (clean) personsByCpf.set(clean, owner);
     });
 
     // Se houver algum comprador em vendas que ainda não tem ID na tabela owners, inclui como pessoa
     sales.forEach(s => {
-      const existing = Array.from(personsMap.values()).find(
-        p => p.cpf.replace(/\D/g, '') === s.clienteCpf.replace(/\D/g, '')
-      );
+      const cleanCpf = s.clienteCpf.replace(/\D/g, '');
+      const existing = cleanCpf ? personsByCpf.get(cleanCpf) : undefined;
       if (!existing && s.clienteNome) {
-        const generatedId = 'buyer_' + s.clienteCpf.replace(/\D/g, '');
-        personsMap.set(generatedId, {
+        const generatedId = 'buyer_' + (cleanCpf || s.id);
+        const buyerObj: FormerOwner = {
           id: generatedId,
           nome: s.clienteNome,
           cpf: s.clienteCpf,
@@ -76,12 +86,49 @@ export const PersonsView: React.FC<PersonsViewProps> = ({
           estado: s.clienteEstado || 'PB',
           cep: s.clienteCep,
           dataCadastro: s.dataVenda
-        });
+        };
+        personsMap.set(generatedId, buyerObj);
+        if (cleanCpf) personsByCpf.set(cleanCpf, buyerObj);
       }
     });
 
     return Array.from(personsMap.values());
   }, [owners, sales]);
+
+  // Pré-indexação O(1) de volume e contagens de vendas/compras para alta escala
+  const { getSoldCount, getBoughtCount } = useMemo(() => {
+    const ownerCpfById = new Map<string, string>();
+    owners.forEach(o => ownerCpfById.set(o.id, o.cpf.replace(/\D/g, '')));
+
+    const soldByOwnerId = new Map<string, number>();
+    const soldByCpf = new Map<string, number>();
+    vehicles.forEach(v => {
+      if (v.antigoDonoId) {
+        soldByOwnerId.set(v.antigoDonoId, (soldByOwnerId.get(v.antigoDonoId) || 0) + 1);
+        const cpf = ownerCpfById.get(v.antigoDonoId);
+        if (cpf) {
+          soldByCpf.set(cpf, (soldByCpf.get(cpf) || 0) + 1);
+        }
+      }
+    });
+
+    const boughtByCpf = new Map<string, number>();
+    sales.forEach(s => {
+      const clean = s.clienteCpf.replace(/\D/g, '');
+      if (clean) {
+        boughtByCpf.set(clean, (boughtByCpf.get(clean) || 0) + 1);
+      }
+    });
+
+    return {
+      getSoldCount: (personId: string, cpfClean: string) => {
+        return (soldByOwnerId.get(personId) || 0) || (soldByCpf.get(cpfClean) || 0);
+      },
+      getBoughtCount: (cpfClean: string) => {
+        return boughtByCpf.get(cpfClean) || 0;
+      }
+    };
+  }, [vehicles, sales, owners]);
 
   // Filtro de busca
   const filteredPersons = useMemo(() => {
@@ -128,9 +175,9 @@ export const PersonsView: React.FC<PersonsViewProps> = ({
     return {
       soldToStore,
       boughtFromStore,
-      totalVolume: totalSoldValue + totalBoughtValue
+      totalVolume: isGestor ? totalSoldValue + totalBoughtValue : totalBoughtValue
     };
-  }, [selectedPersonForDetail, vehicles, sales, owners]);
+  }, [selectedPersonForDetail, vehicles, sales, owners, isGestor]);
 
   const handleOpenEdit = (person: FormerOwner) => {
     setFormNome(person.nome);
@@ -164,34 +211,53 @@ export const PersonsView: React.FC<PersonsViewProps> = ({
 
   const handleSaveForm = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formNome.trim()) {
-      setFormError('Por favor, informe o nome completo da pessoa.');
+    const cleanNome = sanitizeInputText(formNome);
+    if (!cleanNome || cleanNome.length < 3) {
+      setFormError('Por favor, informe o nome completo válido da pessoa (mínimo de 3 caracteres).');
       return;
     }
     if (!formCpf.trim() || !isValidCPF(formCpf)) {
       setFormError('Informe um CPF válido com 11 dígitos.');
       return;
     }
-    if (formTelefone && !isValidPhone(formTelefone)) {
+    const cleanInputCpf = formCpf.replace(/\D/g, '');
+    const currentId = isEditingPerson && selectedPersonForDetail ? selectedPersonForDetail.id : '';
+    const duplicateCpfOwner = owners.find(
+      o => o.id !== currentId && o.cpf.replace(/\D/g, '') === cleanInputCpf
+    );
+    if (duplicateCpfOwner) {
+      setFormError(`Já existe um cadastro registrado com este CPF (${duplicateCpfOwner.nome}).`);
+      return;
+    }
+    if (!formTelefone.trim() || !isValidPhone(formTelefone)) {
       setFormError('Informe um WhatsApp válido com DDD (10 ou 11 dígitos).');
       return;
     }
-    if (formCep && !isValidCEP(formCep)) {
+    const cleanEndereco = sanitizeInputText(formEndereco);
+    if (!cleanEndereco) {
+      setFormError('Informe o endereço residencial da pessoa.');
+      return;
+    }
+    if (formCep.trim() && !isValidCEP(formCep)) {
       setFormError('Informe um CEP válido com 8 dígitos.');
+      return;
+    }
+    if (formEstado.trim() && !isValidUF(formEstado)) {
+      setFormError('Informe uma UF (Estado) válida de 2 letras (ex: PB, PE, RN, SP).');
       return;
     }
 
     const ownerToSave: FormerOwner = {
       id: isEditingPerson && selectedPersonForDetail ? selectedPersonForDetail.id : 'owner_' + Date.now(),
-      nome: formNome.trim(),
+      nome: cleanNome,
       cpf: maskCPF(formCpf),
-      rg: formRg.trim(),
+      rg: sanitizeInputText(formRg),
       telefone: maskPhone(formTelefone),
-      endereco: formEndereco.trim(),
-      cidade: formCidade.trim(),
-      estado: formEstado.trim(),
-      cep: maskCEP(formCep),
-      observacoes: formObservacoes.trim(),
+      endereco: cleanEndereco,
+      cidade: sanitizeInputText(formCidade) || 'Areial',
+      estado: maskUF(sanitizeInputText(formEstado)) || 'PB',
+      cep: formCep.trim() ? maskCEP(formCep) : '',
+      observacoes: sanitizeInputText(formObservacoes, true),
       dataCadastro: isEditingPerson && selectedPersonForDetail ? selectedPersonForDetail.dataCadastro : new Date().toISOString()
     };
 
@@ -238,6 +304,7 @@ export const PersonsView: React.FC<PersonsViewProps> = ({
           <Search className="w-4 h-4 text-neutral-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
           <input
             type="text"
+            maxLength={100}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             placeholder="Buscar por Nome, CPF, Telefone ou Cidade..."
@@ -266,8 +333,8 @@ export const PersonsView: React.FC<PersonsViewProps> = ({
         ) : (
           pagination.paginatedItems.map((person) => {
             const cleanCpf = person.cpf.replace(/\D/g, '');
-            const soldCount = vehicles.filter(v => v.antigoDonoId === person.id || owners.find(o => o.id === v.antigoDonoId)?.cpf.replace(/\D/g, '') === cleanCpf).length;
-            const boughtCount = sales.filter(s => s.clienteCpf.replace(/\D/g, '') === cleanCpf).length;
+            const soldCount = getSoldCount(person.id, cleanCpf);
+            const boughtCount = getBoughtCount(cleanCpf);
 
             return (
               <div
@@ -427,7 +494,9 @@ export const PersonsView: React.FC<PersonsViewProps> = ({
                   )}
                 </div>
                 <div>
-                  <span className="text-[10px] text-neutral-500 block uppercase">Volume Transacionado com a Loja</span>
+                  <span className="text-[10px] text-neutral-500 block uppercase">
+                    {isGestor ? 'Volume Transacionado com a Loja' : 'Compras Realizadas na Loja'}
+                  </span>
                   <strong className="text-amber-400 text-base font-extrabold tabular-nums block mt-0.5">
                     {formatCurrency(personHistory.totalVolume)}
                   </strong>
@@ -469,12 +538,14 @@ export const PersonsView: React.FC<PersonsViewProps> = ({
                         </div>
 
                         <div className="flex items-center gap-4 self-end sm:self-auto">
-                          <div className="text-right">
-                            <span className="text-[10px] text-neutral-500 block uppercase">Valor Pago pela Loja</span>
-                            <strong className="text-amber-400 font-bold tabular-nums text-sm">
-                              {formatCurrency(veh.valorPago)}
-                            </strong>
-                          </div>
+                          {isGestor && (
+                            <div className="text-right">
+                              <span className="text-[10px] text-neutral-500 block uppercase">Valor Pago pela Loja</span>
+                              <strong className="text-amber-400 font-bold tabular-nums text-sm">
+                                {formatCurrency(veh.valorPago)}
+                              </strong>
+                            </div>
+                          )}
                           <span className={`px-2 py-1 rounded text-[10px] font-bold ${
                             veh.status === 'vendido' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-neutral-800 text-neutral-300'
                           }`}>
@@ -579,6 +650,7 @@ export const PersonsView: React.FC<PersonsViewProps> = ({
                 <input
                   type="text"
                   required
+                  maxLength={120}
                   value={formNome}
                   onChange={(e) => setFormNome(e.target.value)}
                   placeholder="Ex: José Pereira da Silva"
@@ -639,9 +711,11 @@ export const PersonsView: React.FC<PersonsViewProps> = ({
               </div>
 
               <div>
-                <label className="block text-neutral-400 font-semibold mb-1">Endereço Residencial</label>
+                <label className="block text-neutral-400 font-semibold mb-1">Endereço Residencial *</label>
                 <input
                   type="text"
+                  required
+                  maxLength={200}
                   value={formEndereco}
                   onChange={(e) => setFormEndereco(e.target.value)}
                   placeholder="Rua, número, bairro"
@@ -654,6 +728,7 @@ export const PersonsView: React.FC<PersonsViewProps> = ({
                   <label className="block text-neutral-400 font-semibold mb-1">Cidade</label>
                   <input
                     type="text"
+                    maxLength={80}
                     value={formCidade}
                     onChange={(e) => setFormCidade(e.target.value)}
                     placeholder="Areial"
@@ -666,7 +741,7 @@ export const PersonsView: React.FC<PersonsViewProps> = ({
                     type="text"
                     maxLength={2}
                     value={formEstado}
-                    onChange={(e) => setFormEstado(e.target.value.toUpperCase())}
+                    onChange={(e) => setFormEstado(maskUF(e.target.value))}
                     placeholder="PB"
                     className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-amber-500 font-mono uppercase"
                   />
@@ -677,6 +752,7 @@ export const PersonsView: React.FC<PersonsViewProps> = ({
                 <label className="block text-neutral-400 font-semibold mb-1">Observações Internas</label>
                 <textarea
                   rows={2}
+                  maxLength={500}
                   value={formObservacoes}
                   onChange={(e) => setFormObservacoes(e.target.value)}
                   placeholder="Notas sobre preferências, perfil comercial, etc."

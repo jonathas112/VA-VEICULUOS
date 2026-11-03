@@ -7,7 +7,7 @@ import {
 import { Vehicle, Sale, Salesperson, UserRole } from '../../types';
 import { 
   formatCurrency, formatDate, computePreSaleTotalCost, 
-  computeNetProfit, getMonthYearKey, getMonthName 
+  computeNetProfit, getMonthYearKey, getMonthName, sumCurrency, toCents
 } from '../../utils/formatters';
 import { PageHeader, KpiCard, StatusBadge } from '../common/DesignSystem';
 
@@ -26,11 +26,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   vehicles = [],
   sales = [],
   salespeople = [],
-  userRole = 'gestor',
+  userRole = 'vendedor',
   onNavigateTab,
   onNavigateToTab,
   onOpenEntryModal
 }) => {
+  const isGestor = userRole === 'gestor';
   const handleNavigate = (tab: string) => {
     if (onNavigateTab) onNavigateTab(tab);
     else if (onNavigateToTab) onNavigateToTab(tab);
@@ -43,44 +44,59 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   // Month options from sales history + current
   const monthOptions = useMemo(() => {
     const set = new Set<string>();
-    set.add(currentMonthKey);
-    (sales || []).forEach(s => set.add(getMonthYearKey(s.dataVenda)));
+    if (currentMonthKey) set.add(currentMonthKey);
+    (sales || []).forEach(s => {
+      const key = getMonthYearKey(s.dataVenda);
+      if (key) set.add(key);
+    });
     return Array.from(set).sort().reverse();
   }, [sales, currentMonthKey]);
 
-  // Filtered sales by selected period (or all)
+  // Filtered sales by selected period (excludes cancelled sales / distratos)
   const filteredSales = useMemo(() => {
-    const list = sales || [];
+    const list = (sales || []).filter(s => s.statusVenda !== 'cancelada');
     if (selectedPeriod === 'all') return list;
     return list.filter(s => getMonthYearKey(s.dataVenda) === selectedPeriod);
   }, [sales, selectedPeriod]);
 
-  // KPIs Calculations
+  // Pre-index O(1) de veículos por ID
+  const vehiclesById = useMemo(() => {
+    const map = new Map<string, Vehicle>();
+    (vehicles || []).forEach(v => map.set(v.id, v));
+    return map;
+  }, [vehicles]);
+
+  // KPIs Calculations (em centavos inteiros exatos)
   const inStockVehicles = useMemo(() => (vehicles || []).filter(v => v.status === 'em_estoque'), [vehicles]);
-  const totalStockInvestment = useMemo(() => inStockVehicles.reduce((acc, v) => acc + computePreSaleTotalCost(v), 0), [inStockVehicles]);
+  const totalStockInvestment = useMemo(() => sumCurrency(inStockVehicles.map(v => computePreSaleTotalCost(v))), [inStockVehicles]);
   
-  const totalPeriodRevenue = useMemo(() => filteredSales.reduce((acc, s) => acc + s.valorVenda, 0), [filteredSales]);
+  const totalPeriodRevenue = useMemo(() => sumCurrency(filteredSales.map(s => s.valorVenda)), [filteredSales]);
   
   const totalPeriodNetProfit = useMemo(() => {
-    return filteredSales.reduce((acc, s) => {
-      const v = (vehicles || []).find(veh => veh.id === s.veiculoId);
-      return acc + (v ? computeNetProfit(v, s) : 0);
-    }, 0);
-  }, [filteredSales, vehicles]);
+    return sumCurrency(
+      filteredSales.map(s => {
+        const v = vehiclesById.get(s.veiculoId);
+        return v ? computeNetProfit(v, s) : 0;
+      })
+    );
+  }, [filteredSales, vehiclesById]);
 
-  const periodMargin = totalPeriodRevenue > 0 
-    ? ((totalPeriodNetProfit / totalPeriodRevenue) * 100).toFixed(1)
-    : '0.0';
+  const rawPeriodMargin =
+    toCents(totalPeriodRevenue) > 0
+      ? (toCents(totalPeriodNetProfit) / toCents(totalPeriodRevenue)) * 100
+      : 0;
+  const periodMarginValue = Number.isFinite(rawPeriodMargin) ? rawPeriodMargin : 0;
+  const periodMargin = periodMarginValue.toFixed(1);
 
-  const pendingCommissions = useMemo(() => (sales || []).filter(s => s.comissaoPendente), [sales]);
+  const pendingCommissions = useMemo(() => (sales || []).filter(s => s.comissaoPendente && s.statusVenda !== 'cancelada'), [sales]);
 
   // Ranking of sales by salesperson
   const sellerRankings = useMemo(() => {
     const list = Array.isArray(salespeople) ? salespeople : [];
     return list.map(seller => {
       const sellerSales = filteredSales.filter(s => s.vendedorId === seller.id);
-      const sellerRevenue = sellerSales.reduce((acc, s) => acc + s.valorVenda, 0);
-      const sellerCommission = sellerSales.reduce((acc, s) => acc + s.comissaoValor, 0);
+      const sellerRevenue = sumCurrency(sellerSales.map(s => s.valorVenda));
+      const sellerCommission = sumCurrency(sellerSales.map(s => s.comissaoValor));
       return {
         ...seller,
         salesCount: sellerSales.length,
@@ -109,10 +125,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       
       {/* 1. Page Header */}
       <PageHeader
-        breadcrumb="Visão Executiva"
+        breadcrumb={isGestor ? "Visão Executiva" : "Painel Comercial"}
         title="Dashboard da Loja"
-        subtitle="Controle em tempo real de estoque, vendas, faturamento líquido e comissões da equipe."
-        primaryAction={onOpenEntryModal ? {
+        subtitle={isGestor
+          ? "Controle em tempo real de estoque, vendas, faturamento líquido e comissões da equipe."
+          : "Acompanhamento em tempo real de veículos disponíveis no pátio e volume comercial de vendas."}
+        primaryAction={isGestor && onOpenEntryModal ? {
           label: "Novo Veículo",
           icon: Plus,
           onClick: onOpenEntryModal,
@@ -150,7 +168,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
       </div>
 
-      {/* 3. Principais KPIs (6 Metas Solicitadas) */}
+      {/* 3. Principais KPIs (Protegidos por RBAC) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         
         {/* KPI 1: Vendas */}
@@ -169,24 +187,30 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           subtext="Volume total transacionado"
         />
 
-        {/* KPI 3: Lucro Líquido Real */}
-        <KpiCard
-          title="Lucro Líquido Real"
-          value={formatCurrency(totalPeriodNetProfit)}
-          icon={TrendingUp}
-          trend={totalPeriodNetProfit >= 0 ? 'up' : 'down'}
-          comparison={totalPeriodNetProfit >= 0 ? '+ Positivo' : '- Atenção'}
-          subtext="Deduz custos & comissões"
-          isRedHighlight={true}
-        />
+        {/* KPI 3: Lucro Líquido Real (Exclusivo Gestor) */}
+        {isGestor && (
+          <KpiCard
+            title="Lucro Líquido Real"
+            value={formatCurrency(totalPeriodNetProfit)}
+            icon={TrendingUp}
+            trend={totalPeriodNetProfit >= 0 ? 'up' : 'down'}
+            comparison={totalPeriodNetProfit >= 0 ? '+ Positivo' : '- Atenção'}
+            subtext="Deduz custos & comissões"
+            isRedHighlight={true}
+          />
+        )}
 
-        {/* KPI 4: Margem Líquida */}
-        <KpiCard
-          title="Margem de Lucro"
-          value={`${periodMargin}%`}
-          icon={Percent}
-          subtext="Retorno sobre receita bruta"
-        />
+        {/* KPI 4: Margem Líquida (Exclusivo Gestor) */}
+        {isGestor && (
+          <KpiCard
+            title="Margem de Lucro"
+            value={`${periodMargin}%`}
+            icon={Percent}
+            trend={periodMarginValue >= 0 ? 'up' : 'down'}
+            comparison={periodMarginValue >= 0 ? '+ Saudável' : '- Negativa'}
+            subtext="Retorno sobre receita bruta"
+          />
+        )}
 
         {/* KPI 5: Veículos em Estoque */}
         <KpiCard
@@ -196,13 +220,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           subtext="Prontos para comercialização"
         />
 
-        {/* KPI 6: Capital Investido */}
-        <KpiCard
-          title="Capital em Pátio"
-          value={formatCurrency(totalStockInvestment)}
-          icon={Clock}
-          subtext="Aquisição + Pátio atual"
-        />
+        {/* KPI 6: Capital Investido (Exclusivo Gestor) */}
+        {isGestor && (
+          <KpiCard
+            title="Capital em Pátio"
+            value={formatCurrency(totalStockInvestment)}
+            icon={Clock}
+            subtext="Aquisição + Pátio atual"
+          />
+        )}
 
       </div>
 
@@ -275,22 +301,26 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   <div className="text-sm font-bold text-[#F5F5F5] font-num">
                     {formatCurrency(seller.revenue)}
                   </div>
-                  <div className="text-[11px] text-[#A7A7AB]">
-                    Comissão: <span className="text-[#22C55E] font-medium font-num">{formatCurrency(seller.commission)}</span>
-                  </div>
+                  {isGestor && (
+                    <div className="text-[11px] text-[#A7A7AB]">
+                      Comissão: <span className="text-[#22C55E] font-medium font-num">{formatCurrency(seller.commission)}</span>
+                    </div>
+                  )}
                 </div>
               </div>
             ))}
           </div>
 
-          <div className="mt-4 pt-3 border-t border-[#2D2D32] flex justify-end">
-            <button
-              onClick={() => handleNavigate('financial')}
-              className="text-xs text-[#CAC9CA] hover:text-[#D4130D] flex items-center gap-1 font-medium transition-colors"
-            >
-              Ver relatório financeiro detalhado <ArrowRight className="w-3.5 h-3.5" />
-            </button>
-          </div>
+          {isGestor && (
+            <div className="mt-4 pt-3 border-t border-[#2D2D32] flex justify-end">
+              <button
+                onClick={() => handleNavigate('financial')}
+                className="text-xs text-[#CAC9CA] hover:text-[#D4130D] flex items-center gap-1 font-medium transition-colors cursor-pointer"
+              >
+                Ver relatório financeiro detalhado <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Últimas Vendas Concluídas */}
@@ -312,7 +342,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
           <div className="space-y-3 flex-1">
             {recentSales.map(s => {
-              const v = vehicles.find(veh => veh.id === s.veiculoId);
+              const v = vehiclesById.get(s.veiculoId);
               const profit = v ? computeNetProfit(v, s) : 0;
               return (
                 <div
@@ -412,12 +442,21 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                         {formatCurrency(v.valorAnunciado)}
                       </span>
                     </div>
-                    <div className="text-right">
-                      <span className="text-[10px] text-[#A7A7AB] uppercase block">Custo Pátio</span>
-                      <span className="text-xs text-[#CAC9CA] font-medium font-num">
-                        {formatCurrency(totalCost)}
-                      </span>
-                    </div>
+                    {isGestor ? (
+                      <div className="text-right">
+                        <span className="text-[10px] text-[#A7A7AB] uppercase block">Custo Pátio</span>
+                        <span className="text-xs text-[#CAC9CA] font-medium font-num">
+                          {formatCurrency(totalCost)}
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="text-right">
+                        <span className="text-[10px] text-[#A7A7AB] uppercase block">Quilometragem</span>
+                        <span className="text-xs text-[#CAC9CA] font-medium font-num">
+                          {(v.quilometragem || 0).toLocaleString('pt-BR')} km
+                        </span>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>

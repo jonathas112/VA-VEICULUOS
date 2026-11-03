@@ -3,11 +3,11 @@ import {
   History, Search, 
   Car, CheckCircle, FileText, X, Clock, Eye
 } from 'lucide-react';
-import { Vehicle, FormerOwner, Sale, StoreProfile } from '../../types';
+import { Vehicle, FormerOwner, Sale, StoreProfile, UserRole } from '../../types';
 import { 
   formatCurrency, formatDate, formatNumber, 
-  computeAcquisitionCost, computePatioExpenses, 
-  computePreSaleTotalCost, computeNetProfit, computeMarginPercent 
+  computeAcquisitionCost, computePatioExpenses, computePostSaleCosts,
+  computePreSaleTotalCost, computeNetProfit, computeSaleMarginPercent 
 } from '../../utils/formatters';
 import { PaginationControls } from '../common/PaginationControls';
 import { usePaginatedList } from '../../hooks/usePaginatedList';
@@ -17,6 +17,7 @@ interface VehicleHistoryViewProps {
   owners: FormerOwner[];
   sales: Sale[];
   store?: StoreProfile;
+  userRole?: UserRole;
   onOpenContractModal?: (vehicle: Vehicle, type: 'compra' | 'venda') => void;
   onSelectOwner?: (ownerId: string) => void;
 }
@@ -25,8 +26,10 @@ export const VehicleHistoryView: React.FC<VehicleHistoryViewProps> = ({
   vehicles,
   owners,
   sales,
+  userRole = 'vendedor',
   onOpenContractModal
 }) => {
+  const isGestor = userRole === 'gestor';
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<'todos' | 'em_estoque' | 'vendido'>('todos');
   
@@ -107,7 +110,9 @@ export const VehicleHistoryView: React.FC<VehicleHistoryViewProps> = ({
             <h1 className="text-xl sm:text-2xl font-bold text-white">Histórico Geral de Movimentação</h1>
           </div>
           <p className="text-neutral-400 text-xs sm:text-sm mt-1">
-            Rastreabilidade completa de cada veículo: entrada, antigo dono, custos de pátio, vendas e compradores (10 por página).
+            {isGestor
+              ? 'Rastreabilidade completa de cada veículo: entrada, antigo dono, custos de pátio, vendas e compradores (10 por página).'
+              : 'Histórico operacional de movimentação dos veículos: entrada, proprietário anterior, situação e comprador (10 por página).'}
           </p>
         </div>
 
@@ -124,6 +129,7 @@ export const VehicleHistoryView: React.FC<VehicleHistoryViewProps> = ({
           <Search className="w-4 h-4 text-neutral-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
           <input
             type="text"
+            maxLength={100}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             placeholder="Pesquisar por Placa, Antigo Dono, CPF, Modelo, Cor, RENAVAM ou Comprador..."
@@ -177,7 +183,7 @@ export const VehicleHistoryView: React.FC<VehicleHistoryViewProps> = ({
                 <th className="py-3 px-4">Veículo</th>
                 <th className="py-3 px-4">Entrada & Origem</th>
                 <th className="py-3 px-4">Antigo Proprietário</th>
-                <th className="py-3 px-4">Custos de Pátio</th>
+                {isGestor && <th className="py-3 px-4">Custos de Pátio</th>}
                 <th className="py-3 px-4">Situação do Veículo</th>
                 <th className="py-3 px-4 text-right">Ações</th>
               </tr>
@@ -185,7 +191,7 @@ export const VehicleHistoryView: React.FC<VehicleHistoryViewProps> = ({
             <tbody className="divide-y divide-neutral-800/60 text-neutral-300">
               {pagination.totalItems === 0 ? (
                 <tr>
-                  <td colSpan={6} className="text-center py-12 text-neutral-500">
+                  <td colSpan={isGestor ? 6 : 5} className="text-center py-12 text-neutral-500">
                     <Car className="w-8 h-8 mx-auto mb-2 opacity-40" />
                     Nenhum veículo encontrado com os filtros atuais.
                   </td>
@@ -230,9 +236,11 @@ export const VehicleHistoryView: React.FC<VehicleHistoryViewProps> = ({
                       <td className="py-3 px-4 whitespace-nowrap">
                         <div className="flex flex-col">
                           <span className="font-medium text-white">{formatDate(vehicle.dataEntrada)}</span>
-                          <span className="text-[11px] text-neutral-400">
-                            Pago: <strong className="text-amber-400 tabular-nums">{formatCurrency(vehicle.valorPago)}</strong>
-                          </span>
+                          {isGestor && (
+                            <span className="text-[11px] text-neutral-400">
+                              Pago: <strong className="text-amber-400 tabular-nums">{formatCurrency(vehicle.valorPago)}</strong>
+                            </span>
+                          )}
                           <span className="text-[10px] text-neutral-500">
                             Entrada por: {vehicle.cadastradoPor || 'Gestor'}
                           </span>
@@ -252,20 +260,22 @@ export const VehicleHistoryView: React.FC<VehicleHistoryViewProps> = ({
                         )}
                       </td>
 
-                      {/* Custos de Pátio */}
-                      <td className="py-3 px-4 whitespace-nowrap">
-                        <div className="flex flex-col">
-                          <span className="font-semibold text-neutral-200 tabular-nums">
-                            {formatCurrency(patioCosts)}
-                          </span>
-                          <span className="text-[10px] text-neutral-400">
-                            {vehicle.custosPatio?.length || 0} despesa(s)
-                          </span>
-                          <span className="text-[10px] text-neutral-500">
-                            Custo Total: {formatCurrency(totalPreCost)}
-                          </span>
-                        </div>
-                      </td>
+                      {/* Custos de Pátio — exclusivo do Gestor */}
+                      {isGestor && (
+                        <td className="py-3 px-4 whitespace-nowrap">
+                          <div className="flex flex-col">
+                            <span className="font-semibold text-neutral-200 tabular-nums">
+                              {formatCurrency(patioCosts)}
+                            </span>
+                            <span className="text-[10px] text-neutral-400">
+                              {vehicle.custosPatio?.length || 0} despesa(s)
+                            </span>
+                            <span className="text-[10px] text-neutral-500">
+                              Custo Total: {formatCurrency(totalPreCost)}
+                            </span>
+                          </div>
+                        </td>
+                      )}
 
                       {/* Situação do Veículo */}
                       <td className="py-3 px-4 whitespace-nowrap">
@@ -414,14 +424,20 @@ export const VehicleHistoryView: React.FC<VehicleHistoryViewProps> = ({
                           <p><strong className="text-neutral-400">Endereço:</strong> {selectedVehicleOwner?.endereco || '-'}</p>
                         </div>
                         <div>
-                          <p><strong className="text-neutral-400">Valor Pago ao Dono:</strong> <span className="text-amber-400 font-bold">{formatCurrency(selectedVehicleForDossier.valorPago)}</span></p>
-                          <p><strong className="text-neutral-400">Débito Detran:</strong> {selectedVehicleForDossier.debitoDetran?.temDebito ? `${formatCurrency(selectedVehicleForDossier.debitoDetran.valor)} (Arcado por: ${selectedVehicleForDossier.debitoDetran.quemArca})` : 'Sem débitos'}</p>
+                          {isGestor && (
+                            <>
+                              <p><strong className="text-neutral-400">Valor Pago ao Dono:</strong> <span className="text-amber-400 font-bold">{formatCurrency(selectedVehicleForDossier.valorPago)}</span></p>
+                              <p><strong className="text-neutral-400">Débito Detran:</strong> {selectedVehicleForDossier.debitoDetran?.temDebito ? `${formatCurrency(selectedVehicleForDossier.debitoDetran.valor)} (Arcado por: ${selectedVehicleForDossier.debitoDetran.quemArca})` : 'Sem débitos'}</p>
+                            </>
+                          )}
                           <p><strong className="text-neutral-400">Cadastrado por:</strong> {selectedVehicleForDossier.cadastradoPor || 'Gestor'}</p>
-                          <p><strong className="text-neutral-400">Custo Total de Aquisição:</strong> {formatCurrency(computeAcquisitionCost(selectedVehicleForDossier))}</p>
+                          {isGestor && (
+                            <p><strong className="text-neutral-400">Custo Total de Aquisição:</strong> {formatCurrency(computeAcquisitionCost(selectedVehicleForDossier))}</p>
+                          )}
                         </div>
                       </div>
 
-                      {onOpenContractModal && (
+                      {isGestor && onOpenContractModal && (
                         <div className="mt-3 pt-3 border-t border-neutral-800/80">
                           <button
                             onClick={() => onOpenContractModal(selectedVehicleForDossier, 'compra')}
@@ -441,9 +457,11 @@ export const VehicleHistoryView: React.FC<VehicleHistoryViewProps> = ({
                     <div className="bg-neutral-950 p-4 rounded-xl border border-neutral-800">
                       <div className="flex items-center justify-between mb-2">
                         <span className="font-bold text-white text-sm">2. Preparação de Pátio & Manutenções</span>
-                        <span className="text-blue-400 font-bold">
-                          Total: {formatCurrency(computePatioExpenses(selectedVehicleForDossier))}
-                        </span>
+                        {isGestor && (
+                          <span className="text-blue-400 font-bold">
+                            Total: {formatCurrency(computePatioExpenses(selectedVehicleForDossier))}
+                          </span>
+                        )}
                       </div>
 
                       {selectedVehicleForDossier.custosPatio && selectedVehicleForDossier.custosPatio.length > 0 ? (
@@ -456,14 +474,16 @@ export const VehicleHistoryView: React.FC<VehicleHistoryViewProps> = ({
                                   Categoria: {exp.categoria} · Data: {formatDate(exp.data)}
                                 </span>
                               </div>
-                              <span className="font-bold text-neutral-200 tabular-nums">
-                                {formatCurrency(exp.valor)}
-                              </span>
+                              {isGestor && (
+                                <span className="font-bold text-neutral-200 tabular-nums">
+                                  {formatCurrency(exp.valor)}
+                                </span>
+                              )}
                             </div>
                           ))}
                         </div>
                       ) : (
-                        <p className="text-neutral-500 italic">Nenhum custo adicional lançado para este veículo.</p>
+                        <p className="text-neutral-500 italic">Nenhum serviço adicional registrado para este veículo.</p>
                       )}
                     </div>
                   </div>
@@ -489,28 +509,36 @@ export const VehicleHistoryView: React.FC<VehicleHistoryViewProps> = ({
                             <p><strong className="text-neutral-400">Valor Final de Venda:</strong> <span className="text-emerald-400 font-bold">{formatCurrency(selectedVehicleSale.valorVenda)}</span></p>
                             <p><strong className="text-neutral-400">Forma de Pagamento:</strong> {selectedVehicleSale.formaPagamento}</p>
                             <p><strong className="text-neutral-400">Vendedor:</strong> {selectedVehicleSale.vendedorNome}</p>
-                            <p><strong className="text-neutral-400">Comissão do Vendedor:</strong> {formatCurrency(selectedVehicleSale.comissaoValor)}</p>
+                            {isGestor && (
+                              <>
+                                <p><strong className="text-neutral-400">Comissão do Vendedor:</strong> {formatCurrency(selectedVehicleSale.comissaoValor)}</p>
+                                <p><strong className="text-neutral-400">Despesas Pós-Venda:</strong> {formatCurrency(computePostSaleCosts(selectedVehicleSale))}</p>
+                              </>
+                            )}
                           </div>
                         </div>
 
-                        {/* Balanço DRE do Carro */}
-                        <div className="mt-4 p-3 rounded-lg bg-neutral-900 border border-neutral-800 flex items-center justify-between">
-                          <div>
-                            <span className="text-[10px] text-neutral-400 block uppercase">Lucro Líquido Real</span>
-                            <span className="text-lg font-extrabold text-emerald-400 tabular-nums">
-                              {formatCurrency(computeNetProfit(selectedVehicleForDossier, selectedVehicleSale))}
-                            </span>
-                          </div>
-                          <div className="text-right">
-                            <span className="text-[10px] text-neutral-400 block uppercase">Margem Líquida</span>
-                            <span className="text-sm font-bold text-white tabular-nums">
-                              {computeMarginPercent(
-                                selectedVehicleSale.valorVenda,
-                                computePreSaleTotalCost(selectedVehicleForDossier) + (selectedVehicleSale.comissaoValor || 0)
-                              ).toFixed(1)}%
-                            </span>
-                          </div>
-                        </div>
+                        {/* Balanço DRE do Carro — exclusivo do Gestor */}
+                        {isGestor && (() => {
+                          const dossierProfit = computeNetProfit(selectedVehicleForDossier, selectedVehicleSale);
+                          const dossierMargin = computeSaleMarginPercent(selectedVehicleForDossier, selectedVehicleSale);
+                          return (
+                            <div className="mt-4 p-3 rounded-lg bg-neutral-900 border border-neutral-800 flex items-center justify-between">
+                              <div>
+                                <span className="text-[10px] text-neutral-400 block uppercase">Lucro Líquido Real</span>
+                                <span className={`text-lg font-extrabold tabular-nums ${dossierProfit >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                  {formatCurrency(dossierProfit)}
+                                </span>
+                              </div>
+                              <div className="text-right">
+                                <span className="text-[10px] text-neutral-400 block uppercase">Margem Líquida</span>
+                                <span className={`text-sm font-bold tabular-nums ${dossierMargin >= 0 ? 'text-white' : 'text-red-400'}`}>
+                                  {dossierMargin.toFixed(1)}%
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })()}
 
                         {onOpenContractModal && (
                           <div className="mt-3 pt-3 border-t border-neutral-800/80">

@@ -6,10 +6,13 @@ import {
 import { Sale, Vehicle, Salesperson, StoreProfile } from '../../types';
 import { 
   formatCurrency, formatDate, 
-  computePostSaleCosts, computeNetProfit, computeMarginPercent,
-  getMonthYearKey, getMonthName 
+  computeAcquisitionCost, computeStoreDetranDebt, computePatioExpenses,
+  computePostSaleCosts, computeNetProfit, computeSaleMarginPercent,
+  getMonthYearKey, getMonthName, toCents, fromCents, sumCurrency
 } from '../../utils/formatters';
 import { PageHeader, KpiCard } from '../common/DesignSystem';
+import { PaginationControls } from '../common/PaginationControls';
+import { usePaginatedList } from '../../hooks/usePaginatedList';
 
 interface FinancialViewProps {
   sales: Sale[];
@@ -30,6 +33,13 @@ export const FinancialView: React.FC<FinancialViewProps> = ({
   const [customEnd, setCustomEnd] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
 
+  // O(1) Pre-index de veículos por ID para evitar varreduras O(N^2)
+  const vehiclesById = useMemo(() => {
+    const map = new Map<string, Vehicle>();
+    vehicles.forEach(v => map.set(v.id, v));
+    return map;
+  }, [vehicles]);
+
   // Available months list
   const availableMonths = useMemo(() => {
     const keys = new Set<string>();
@@ -45,9 +55,10 @@ export const FinancialView: React.FC<FinancialViewProps> = ({
     return Array.from(keys).sort().reverse();
   }, [sales]);
 
-  // Filter sales based on period selection
+  // Filter sales based on period selection (excludes cancelled sales / distratos)
   const periodFilteredSales = useMemo(() => {
     return sales.filter(s => {
+      if (s.statusVenda === 'cancelada') return false;
       if (selectedPeriodMode === 'month') {
         return getMonthYearKey(s.dataVenda) === selectedMonth;
       }
@@ -66,7 +77,7 @@ export const FinancialView: React.FC<FinancialViewProps> = ({
     if (!searchTerm.trim()) return periodFilteredSales;
     const q = searchTerm.toLowerCase();
     return periodFilteredSales.filter(s => {
-      const v = vehicles.find(veh => veh.id === s.veiculoId);
+      const v = vehiclesById.get(s.veiculoId);
       return (
         s.clienteNome.toLowerCase().includes(q) ||
         s.vendedorNome.toLowerCase().includes(q) ||
@@ -77,49 +88,59 @@ export const FinancialView: React.FC<FinancialViewProps> = ({
         ))
       );
     });
-  }, [periodFilteredSales, searchTerm, vehicles]);
+  }, [periodFilteredSales, searchTerm, vehiclesById]);
 
-  // Financial Consolidation Calculations
+  // Paginação sob demanda com cache e proteção de DOM
+  const pagination = usePaginatedList<Sale>({
+    items: displayedSales,
+    initialPageSize: 10,
+    dependencies: [displayedSales.length, selectedPeriodMode, selectedMonth, searchTerm]
+  });
+
+  // Financial Consolidation Calculations (em centavos inteiros exatos)
   const metrics = useMemo(() => {
-    let grossRevenue = 0;
-    let acquisitionTotal = 0;
-    let detranTotal = 0;
-    let patioTotal = 0;
-    let postSaleTotal = 0;
-    let commissionTotal = 0;
+    let grossRevenueCents = 0;
+    let acquisitionCents = 0;
+    let detranCents = 0;
+    let patioCents = 0;
+    let postSaleCents = 0;
+    let commissionCents = 0;
+    let cardFeesCents = 0;
 
     periodFilteredSales.forEach(sale => {
-      grossRevenue += sale.valorVenda;
-      commissionTotal += sale.comissaoValor;
-      postSaleTotal += computePostSaleCosts(sale);
+      grossRevenueCents += toCents(sale.valorVenda);
+      commissionCents += toCents(sale.comissaoValor);
+      postSaleCents += toCents(computePostSaleCosts(sale));
+      cardFeesCents += toCents(sale.taxaCartaoValor || 0);
 
-      const vehicle = vehicles.find(v => v.id === sale.veiculoId);
+      const vehicle = vehiclesById.get(sale.veiculoId);
       if (vehicle) {
-        acquisitionTotal += vehicle.valorPago;
-        if (vehicle.debitoDetran?.temDebito && vehicle.debitoDetran.quemArca === 'loja') {
-          detranTotal += vehicle.debitoDetran.valor;
-        }
-        patioTotal += (vehicle.custosPatio || []).reduce((acc, c) => acc + c.valor, 0);
+        acquisitionCents += toCents(vehicle.valorPago);
+        detranCents += toCents(computeStoreDetranDebt(vehicle));
+        patioCents += toCents(computePatioExpenses(vehicle));
       }
     });
 
-    const totalCosts = acquisitionTotal + detranTotal + patioTotal + postSaleTotal + commissionTotal;
-    const netProfit = grossRevenue - totalCosts;
-    const marginPercent = grossRevenue > 0 ? ((netProfit / grossRevenue) * 100).toFixed(1) : '0';
+    const acquisitionWithDetranCents = acquisitionCents + detranCents;
+    const totalCostsCents = acquisitionWithDetranCents + patioCents + postSaleCents + commissionCents + cardFeesCents;
+    const netProfitCents = grossRevenueCents - totalCostsCents;
+    const rawMargin = grossRevenueCents > 0 ? (netProfitCents / grossRevenueCents) * 100 : 0;
+    const marginPercent = Number.isFinite(rawMargin) ? rawMargin.toFixed(1) : '0.0';
 
     return {
-      grossRevenue,
-      acquisitionTotal,
-      detranTotal,
-      patioTotal,
-      postSaleTotal,
-      commissionTotal,
-      totalCosts,
-      netProfit,
+      grossRevenue: fromCents(grossRevenueCents),
+      acquisitionTotal: fromCents(acquisitionCents),
+      detranTotal: fromCents(detranCents),
+      acquisitionWithDetranTotal: fromCents(acquisitionWithDetranCents),
+      patioTotal: fromCents(patioCents),
+      postSaleTotal: fromCents(postSaleCents),
+      commissionTotal: fromCents(commissionCents),
+      totalCosts: fromCents(totalCostsCents),
+      netProfit: fromCents(netProfitCents),
       marginPercent,
       salesCount: periodFilteredSales.length
     };
-  }, [periodFilteredSales, vehicles]);
+  }, [periodFilteredSales, vehiclesById]);
 
   // Most Profitable Sale in the period
   const mostProfitableSale = useMemo(() => {
@@ -128,7 +149,7 @@ export const FinancialView: React.FC<FinancialViewProps> = ({
     let bestProfit = -Infinity;
 
     periodFilteredSales.forEach(s => {
-      const v = vehicles.find(veh => veh.id === s.veiculoId);
+      const v = vehiclesById.get(s.veiculoId);
       if (v) {
         const p = computeNetProfit(v, s);
         if (p > bestProfit) {
@@ -138,25 +159,27 @@ export const FinancialView: React.FC<FinancialViewProps> = ({
       }
     });
 
-    const v = vehicles.find(veh => veh.id === best.veiculoId);
+    const v = vehiclesById.get(best.veiculoId);
     return {
       sale: best,
       vehicle: v,
       profit: bestProfit,
-      margin: v ? computeMarginPercent(v, best) : '0'
+      margin: v ? computeSaleMarginPercent(v, best).toFixed(1) : '0.0'
     };
-  }, [periodFilteredSales, vehicles]);
+  }, [periodFilteredSales, vehiclesById]);
 
   // Salesperson ranking
   const sellerStats = useMemo(() => {
     return salespeople.map(sp => {
       const sellerSales = periodFilteredSales.filter(s => s.vendedorId === sp.id);
-      const revenue = sellerSales.reduce((acc, s) => acc + s.valorVenda, 0);
-      const commission = sellerSales.reduce((acc, s) => acc + s.comissaoValor, 0);
-      const profitContribution = sellerSales.reduce((acc, s) => {
-        const v = vehicles.find(veh => veh.id === s.veiculoId);
-        return acc + (v ? computeNetProfit(v, s) : 0);
-      }, 0);
+      const revenue = sumCurrency(sellerSales.map(s => s.valorVenda));
+      const commission = sumCurrency(sellerSales.map(s => s.comissaoValor));
+      const profitContribution = sumCurrency(
+        sellerSales.map(s => {
+          const v = vehiclesById.get(s.veiculoId);
+          return v ? computeNetProfit(v, s) : 0;
+        })
+      );
 
       return {
         ...sp,
@@ -166,7 +189,7 @@ export const FinancialView: React.FC<FinancialViewProps> = ({
         profitContribution
       };
     }).sort((a, b) => b.revenue - a.revenue);
-  }, [salespeople, periodFilteredSales, vehicles]);
+  }, [salespeople, periodFilteredSales, vehiclesById]);
 
   return (
     <div className="space-y-6 pb-12">
@@ -269,7 +292,7 @@ export const FinancialView: React.FC<FinancialViewProps> = ({
         {/* Aquisição */}
         <KpiCard
           title="Custo de Aquisição"
-          value={formatCurrency(metrics.acquisitionTotal + metrics.detranTotal)}
+          value={formatCurrency(metrics.acquisitionWithDetranTotal)}
           icon={ShoppingCart}
           subtext={metrics.detranTotal > 0 ? `Inclui ${formatCurrency(metrics.detranTotal)} DETRAN` : 'Valor pago aos donos'}
         />
@@ -383,7 +406,7 @@ export const FinancialView: React.FC<FinancialViewProps> = ({
                   <td className="py-3 px-3 text-right font-num font-semibold text-[#CAC9CA]">
                     {formatCurrency(s.revenue)}
                   </td>
-                  <td className="py-3 px-3 text-right font-num font-bold text-[#22C55E]">
+                  <td className={`py-3 px-3 text-right font-num font-bold ${s.profitContribution >= 0 ? 'text-[#22C55E]' : 'text-[#D4130D]'}`}>
                     {formatCurrency(s.profitContribution)}
                   </td>
                   <td className="py-3 px-3 text-right font-num font-bold text-[#F5F5F5]">
@@ -410,6 +433,7 @@ export const FinancialView: React.FC<FinancialViewProps> = ({
             <Search className="w-3.5 h-3.5 text-[#A7A7AB] absolute left-2.5 top-1/2 -translate-y-1/2" />
             <input
               type="text"
+              maxLength={100}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               placeholder="Buscar por placa, cliente ou modelo..."
@@ -418,83 +442,101 @@ export const FinancialView: React.FC<FinancialViewProps> = ({
           </div>
         </div>
 
-        {displayedSales.length === 0 ? (
+        {pagination.totalItems === 0 ? (
           <div className="py-8 text-center text-xs text-[#68686E]">
             Nenhuma venda localizada para o período selecionado.
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead>
-                <tr className="border-b border-[#2D2D32] text-[#CAC9CA]">
-                  <th className="py-2.5 px-3 font-semibold">Veículo e Data</th>
-                  <th className="py-2.5 px-3 font-semibold">Vendedor e Cliente</th>
-                  <th className="py-2.5 px-3 font-semibold text-right">Venda (Bruta)</th>
-                  <th className="py-2.5 px-3 font-semibold text-right">Aquisição</th>
-                  <th className="py-2.5 px-3 font-semibold text-right">Pátio</th>
-                  <th className="py-2.5 px-3 font-semibold text-right">Pós-Venda</th>
-                  <th className="py-2.5 px-3 font-semibold text-right">Comissão</th>
-                  <th className="py-2.5 px-3 font-semibold text-right">Lucro Líquido</th>
-                  <th className="py-2.5 px-3 font-semibold text-center">Margem</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#2D2D32]">
-                {displayedSales.map(sale => {
-                  const vehicle = vehicles.find(v => v.id === sale.veiculoId);
-                  const acquisition = vehicle ? vehicle.valorPago + (vehicle.debitoDetran?.quemArca === 'loja' ? vehicle.debitoDetran.valor : 0) : 0;
-                  const patio = vehicle ? (vehicle.custosPatio || []).reduce((acc, c) => acc + c.valor, 0) : 0;
-                  const postSale = computePostSaleCosts(sale);
-                  const netProfit = vehicle ? computeNetProfit(vehicle, sale) : 0;
-                  const margin = vehicle ? computeMarginPercent(vehicle, sale) : '0';
+          <div className="space-y-4">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="border-b border-[#2D2D32] text-[#CAC9CA]">
+                    <th className="py-2.5 px-3 font-semibold">Veículo e Data</th>
+                    <th className="py-2.5 px-3 font-semibold">Vendedor e Cliente</th>
+                    <th className="py-2.5 px-3 font-semibold text-right">Venda (Bruta)</th>
+                    <th className="py-2.5 px-3 font-semibold text-right">Aquisição</th>
+                    <th className="py-2.5 px-3 font-semibold text-right">Pátio</th>
+                    <th className="py-2.5 px-3 font-semibold text-right">Pós-Venda</th>
+                    <th className="py-2.5 px-3 font-semibold text-right">Comissão</th>
+                    <th className="py-2.5 px-3 font-semibold text-right">Lucro Líquido</th>
+                    <th className="py-2.5 px-3 font-semibold text-center">Margem</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#2D2D32]">
+                  {pagination.paginatedItems.map(sale => {
+                    const vehicle = vehiclesById.get(sale.veiculoId);
+                    const acquisition = vehicle ? computeAcquisitionCost(vehicle) : 0;
+                    const patio = vehicle ? computePatioExpenses(vehicle) : 0;
+                    const postSale = computePostSaleCosts(sale);
+                    const netProfit = vehicle ? computeNetProfit(vehicle, sale) : 0;
+                    const marginValue = vehicle ? computeSaleMarginPercent(vehicle, sale) : 0;
+                    const margin = marginValue.toFixed(1);
 
-                  return (
-                    <tr key={sale.id} className="hover:bg-[#202024]/40 transition-colors">
-                      <td className="py-2.5 px-3">
-                        <div className="font-semibold text-[#F5F5F5]">
-                          {vehicle ? `${vehicle.marca} ${vehicle.modelo}` : 'Veículo'}
-                        </div>
-                        <div className="text-[11px] text-[#A7A7AB] font-mono">
-                          {vehicle?.placa} • {formatDate(sale.dataVenda)}
-                        </div>
-                      </td>
+                    return (
+                      <tr key={sale.id} className="hover:bg-[#202024]/40 transition-colors">
+                        <td className="py-2.5 px-3">
+                          <div className="font-semibold text-[#F5F5F5]">
+                            {vehicle ? `${vehicle.marca} ${vehicle.modelo}` : 'Veículo'}
+                          </div>
+                          <div className="text-[11px] text-[#A7A7AB] font-mono">
+                            {vehicle?.placa} • {formatDate(sale.dataVenda)}
+                          </div>
+                        </td>
 
-                      <td className="py-2.5 px-3">
-                        <div className="text-[#CAC9CA]">{sale.clienteNome}</div>
-                        <div className="text-[11px] text-[#A7A7AB]">Vend.: {sale.vendedorNome}</div>
-                      </td>
+                        <td className="py-2.5 px-3">
+                          <div className="text-[#CAC9CA]">{sale.clienteNome}</div>
+                          <div className="text-[11px] text-[#A7A7AB]">Vend.: {sale.vendedorNome}</div>
+                        </td>
 
-                      <td className="py-2.5 px-3 text-right font-num font-bold text-[#F5F5F5]">
-                        {formatCurrency(sale.valorVenda)}
-                      </td>
+                        <td className="py-2.5 px-3 text-right font-num font-bold text-[#F5F5F5]">
+                          {formatCurrency(sale.valorVenda)}
+                        </td>
 
-                      <td className="py-2.5 px-3 text-right font-num text-[#CAC9CA]">
-                        {formatCurrency(acquisition)}
-                      </td>
+                        <td className="py-2.5 px-3 text-right font-num text-[#CAC9CA]">
+                          {formatCurrency(acquisition)}
+                        </td>
 
-                      <td className="py-2.5 px-3 text-right font-num text-[#A7A7AB]">
-                        {formatCurrency(patio)}
-                      </td>
+                        <td className="py-2.5 px-3 text-right font-num text-[#A7A7AB]">
+                          {formatCurrency(patio)}
+                        </td>
 
-                      <td className="py-2.5 px-3 text-right font-num text-[#A7A7AB]">
-                        {formatCurrency(postSale)}
-                      </td>
+                        <td className="py-2.5 px-3 text-right font-num text-[#A7A7AB]">
+                          {formatCurrency(postSale)}
+                        </td>
 
-                      <td className="py-2.5 px-3 text-right font-num text-[#A7A7AB]">
-                        {formatCurrency(sale.comissaoValor)}
-                      </td>
+                        <td className="py-2.5 px-3 text-right font-num text-[#A7A7AB]">
+                          {formatCurrency(sale.comissaoValor)}
+                        </td>
 
-                      <td className={`py-2.5 px-3 text-right font-num font-bold ${netProfit >= 0 ? 'text-[#22C55E]' : 'text-[#D4130D]'}`}>
-                        {formatCurrency(netProfit)}
-                      </td>
+                        <td className={`py-2.5 px-3 text-right font-num font-bold ${netProfit >= 0 ? 'text-[#22C55E]' : 'text-[#D4130D]'}`}>
+                          {formatCurrency(netProfit)}
+                        </td>
 
-                      <td className="py-2.5 px-3 text-center font-num font-semibold text-[#CAC9CA]">
-                        {margin}%
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                        <td className={`py-2.5 px-3 text-center font-num font-semibold ${marginValue >= 0 ? 'text-[#CAC9CA]' : 'text-[#D4130D]'}`}>
+                          {margin}%
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {pagination.totalItems > 0 && (
+              <PaginationControls
+                currentPage={pagination.currentPage}
+                totalPages={pagination.totalPages}
+                totalItems={pagination.totalItems}
+                pageSize={pagination.pageSize}
+                onPageChange={pagination.goToPage}
+                onPageSizeChange={pagination.changePageSize}
+                pageSizeOptions={[10, 20, 50]}
+                isCached={pagination.isCurrentPageCached}
+                isLoading={pagination.isLoading}
+                itemLabel="vendas no DRE"
+              />
+            )}
           </div>
         )}
       </div>

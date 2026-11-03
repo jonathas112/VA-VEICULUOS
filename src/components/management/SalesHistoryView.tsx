@@ -2,12 +2,13 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { 
   ShoppingCart, Search, ShieldCheck, ShieldAlert,
   DollarSign, Plus, Wrench, FileText, 
-  ChevronDown, ChevronUp, TrendingUp
+  ChevronDown, ChevronUp, TrendingUp, RotateCcw, AlertTriangle
 } from 'lucide-react';
 import { Sale, Vehicle, PostSaleCost, UserRole, ContractTemplate, StoreProfile } from '../../types';
 import { 
   formatCurrency, formatDate, 
-  computePostSaleCosts, computeNetProfit, computeMarginPercent 
+  computePostSaleCosts, computeNetProfit, computeSaleMarginPercent,
+  sumCurrency, roundCurrency, toCents, clampNumber
 } from '../../utils/formatters';
 import { PageHeader, KpiCard, StatusBadge, UnderlineTabs, formStyles } from '../common/DesignSystem';
 import { PaginationControls } from '../common/PaginationControls';
@@ -22,6 +23,7 @@ interface SalesHistoryViewProps {
   initialTab?: 'vendas' | 'pos-venda';
   onAddPostSaleCost: (saleId: string, cost: PostSaleCost) => void;
   onOpenContract: (vehicle: Vehicle, sale: Sale) => void;
+  onCancelSale?: (saleId: string, motivo: string) => void;
   initialSearchTerm?: string;
 }
 
@@ -32,8 +34,10 @@ export const SalesHistoryView: React.FC<SalesHistoryViewProps> = ({
   initialTab = 'vendas',
   onAddPostSaleCost,
   onOpenContract,
+  onCancelSale,
   initialSearchTerm = ''
 }) => {
+  const isGestor = userRole === 'gestor';
   const [currentTab, setCurrentTab] = useState<'vendas' | 'pos-venda'>(initialTab);
   const [searchTerm, setSearchTerm] = useState(initialSearchTerm);
 
@@ -63,9 +67,16 @@ export const SalesHistoryView: React.FC<SalesHistoryViewProps> = ({
     oficinaParceira: ''
   });
 
+  // O(1) Pre-index de veículos para performance em larga escala
+  const vehiclesById = useMemo(() => {
+    const map = new Map<string, Vehicle>();
+    vehicles.forEach(v => map.set(v.id, v));
+    return map;
+  }, [vehicles]);
+
   const filteredSales = useMemo(() => {
     return sales.filter((sale) => {
-      const vehicle = vehicles.find(v => v.id === sale.veiculoId);
+      const vehicle = vehiclesById.get(sale.veiculoId);
       const query = searchTerm.toLowerCase();
 
       const matchesSearch = 
@@ -91,7 +102,7 @@ export const SalesHistoryView: React.FC<SalesHistoryViewProps> = ({
 
       return matchesSearch && matchesCategory && matchesTab;
     });
-  }, [sales, vehicles, searchTerm, categoryFilter, currentTab]);
+  }, [sales, vehiclesById, searchTerm, categoryFilter, currentTab]);
 
   // Paginação com cache sob demanda
   const pagination = usePaginatedList<Sale>({
@@ -100,16 +111,19 @@ export const SalesHistoryView: React.FC<SalesHistoryViewProps> = ({
     dependencies: [searchTerm, categoryFilter, currentTab, filteredSales.length]
   });
 
-  // Financial Metrics
+  // Financial Metrics (em centavos inteiros exatos, excluindo distratos/cancelamentos)
   const summary = useMemo(() => {
-    const totalRevenue = sales.reduce((acc, s) => acc + s.valorVenda, 0);
-    const totalPostSale = sales.reduce((acc, s) => acc + computePostSaleCosts(s), 0);
-    const totalProfit = sales.reduce((acc, s) => {
-      const v = vehicles.find(veh => veh.id === s.veiculoId);
-      return acc + (v ? computeNetProfit(v, s) : 0);
-    }, 0);
-    const warrantySales = sales.filter(s => !s.isRepasseSemGarantia).length;
-    const repasseSales = sales.filter(s => s.isRepasseSemGarantia).length;
+    const activeSales = sales.filter(s => s.statusVenda !== 'cancelada');
+    const totalRevenue = sumCurrency(activeSales.map(s => s.valorVenda));
+    const totalPostSale = sumCurrency(activeSales.map(s => computePostSaleCosts(s)));
+    const totalProfit = sumCurrency(
+      activeSales.map(s => {
+        const v = vehiclesById.get(s.veiculoId);
+        return v ? computeNetProfit(v, s) : 0;
+      })
+    );
+    const warrantySales = activeSales.filter(s => !s.isRepasseSemGarantia).length;
+    const repasseSales = activeSales.filter(s => s.isRepasseSemGarantia).length;
 
     return {
       totalRevenue,
@@ -118,11 +132,15 @@ export const SalesHistoryView: React.FC<SalesHistoryViewProps> = ({
       warrantySales,
       repasseSales
     };
-  }, [sales, vehicles]);
+  }, [sales, vehiclesById]);
 
   const handleSavePostCost = (saleId: string) => {
-    if (!postCostData.descricao || postCostData.valor <= 0) {
-      alert('Preencha a descrição e um valor válido para o custo de pós-venda.');
+    if (!isGestor) {
+      alert('Operação negada: Apenas o Gestor Geral pode lançar despesas financeiras de pós-venda.');
+      return;
+    }
+    if (!postCostData.descricao.trim() || !Number.isFinite(postCostData.valor) || toCents(postCostData.valor) <= 0 || postCostData.valor > 5_000_000) {
+      alert('Preencha a descrição e um valor positivo válido (até R$ 5.000.000,00) para o custo de pós-venda.');
       return;
     }
 
@@ -130,9 +148,9 @@ export const SalesHistoryView: React.FC<SalesHistoryViewProps> = ({
       id: 'cost_' + Date.now(),
       data: new Date().toISOString().split('T')[0],
       tipo: postCostData.tipo,
-      descricao: postCostData.descricao,
-      valor: Number(postCostData.valor),
-      oficinaParceira: postCostData.oficinaParceira
+      descricao: postCostData.descricao.trim(),
+      valor: roundCurrency(postCostData.valor),
+      oficinaParceira: postCostData.oficinaParceira.trim()
     };
 
     onAddPostSaleCost(saleId, newCost);
@@ -175,28 +193,32 @@ export const SalesHistoryView: React.FC<SalesHistoryViewProps> = ({
       />
 
       {/* 2. KPIs de Vendas */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className={`grid grid-cols-1 sm:grid-cols-2 ${isGestor ? 'lg:grid-cols-4' : 'lg:grid-cols-2'} gap-4`}>
         <KpiCard
           title="Faturamento Total"
           value={formatCurrency(summary.totalRevenue)}
           icon={DollarSign}
           subtext={`${sales.length} vendas registradas`}
         />
-        <KpiCard
-          title="Lucro Líquido Real"
-          value={formatCurrency(summary.totalProfit)}
-          icon={TrendingUp}
-          trend={summary.totalProfit >= 0 ? 'up' : 'down'}
-          comparison="+ Consolidado"
-          subtext="Deduz pátio, comissão & pós-venda"
-          isRedHighlight={true}
-        />
-        <KpiCard
-          title="Gastos em Garantia"
-          value={formatCurrency(summary.totalPostSale)}
-          icon={Wrench}
-          subtext="Total despendido em pós-venda"
-        />
+        {isGestor && (
+          <KpiCard
+            title="Lucro Líquido Real"
+            value={formatCurrency(summary.totalProfit)}
+            icon={TrendingUp}
+            trend={summary.totalProfit >= 0 ? 'up' : 'down'}
+            comparison={summary.totalProfit >= 0 ? '+ Consolidado' : '- Prejuízo'}
+            subtext="Deduz pátio, comissão & pós-venda"
+            isRedHighlight={true}
+          />
+        )}
+        {isGestor && (
+          <KpiCard
+            title="Gastos em Garantia"
+            value={formatCurrency(summary.totalPostSale)}
+            icon={Wrench}
+            subtext="Total despendido em pós-venda"
+          />
+        )}
         <KpiCard
           title="Modalidades"
           value={`${summary.warrantySales} / ${summary.repasseSales}`}
@@ -218,6 +240,7 @@ export const SalesHistoryView: React.FC<SalesHistoryViewProps> = ({
           <Search className="w-4 h-4 text-[#A7A7AB] absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             type="text"
+            maxLength={100}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             placeholder="Pesquisar por cliente, vendedor, modelo ou placa..."
@@ -280,9 +303,10 @@ export const SalesHistoryView: React.FC<SalesHistoryViewProps> = ({
       ) : (
         <div className="space-y-4">
           {pagination.paginatedItems.map((sale) => {
-            const vehicle = vehicles.find(v => v.id === sale.veiculoId);
+            const vehicle = vehiclesById.get(sale.veiculoId);
             const netProfit = vehicle ? computeNetProfit(vehicle, sale) : 0;
-            const marginPercent = vehicle ? computeMarginPercent(vehicle, sale) : '0';
+            const marginValue = vehicle ? computeSaleMarginPercent(vehicle, sale) : 0;
+            const marginPercent = marginValue.toFixed(1);
             const isExpanded = currentTab === 'pos-venda'
               ? !collapsedInPosVenda[sale.id]
               : expandedSaleId === sale.id;
@@ -322,9 +346,13 @@ export const SalesHistoryView: React.FC<SalesHistoryViewProps> = ({
                         <span className="text-xs font-mono text-[#A7A7AB] font-medium">
                           {vehicle?.placa}
                         </span>
-                        <StatusBadge
-                          status={sale.isRepasseSemGarantia ? 'repasse' : 'garantia'}
-                        />
+                        {sale.statusVenda === 'cancelada' ? (
+                          <StatusBadge status="cancelada" />
+                        ) : (
+                          <StatusBadge
+                            status={sale.isRepasseSemGarantia ? 'repasse' : 'garantia'}
+                          />
+                        )}
                       </div>
 
                       <div className="text-xs text-[#A7A7AB] mt-1 space-x-2">
@@ -334,6 +362,38 @@ export const SalesHistoryView: React.FC<SalesHistoryViewProps> = ({
                         <span>•</span>
                         <span>Data: {formatDate(sale.dataVenda)}</span>
                       </div>
+
+                      {sale.statusVenda === 'cancelada' && (
+                        <div className="text-[11px] text-red-400 bg-red-950/40 border border-red-800/60 px-2.5 py-1 rounded-md mt-1.5 flex items-center gap-1.5">
+                          <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-red-400" />
+                          <span>
+                            <strong>Distrato/Cancelamento:</strong> {sale.motivoCancelamento || 'Sem motivo registrado'}
+                            {sale.canceladoPor ? ` (por ${sale.canceladoPor})` : ''}
+                          </span>
+                        </div>
+                      )}
+
+                      {(sale.formaPagamento === 'financiamento' || sale.formaPagamento === 'misto') && (
+                        <div className="text-[11px] text-[#A7A7AB] mt-0.5 font-mono">
+                          Entrada: {formatCurrency(sale.valorEntrada || 0)} + Financiado: {formatCurrency(sale.valorFinanciado || 0)}
+                          {sale.numeroParcelas ? ` (${sale.numeroParcelas}x)` : ''}
+                          {sale.financiadoraNome ? ` • ${sale.financiadoraNome}` : ''}
+                        </div>
+                      )}
+                      {sale.formaPagamento === 'troca' && (
+                        <div className="text-[11px] text-amber-400 mt-0.5 font-mono">
+                          Carro na Troca: {sale.veiculoTrocaDescricao} ({formatCurrency(sale.veiculoTrocaValor || 0)})
+                          {sale.valorEntrada ? ` + Entrada: ${formatCurrency(sale.valorEntrada)}` : ''}
+                          {sale.valorFinanciado ? ` + Saldo: ${formatCurrency(sale.valorFinanciado)}` : ''}
+                        </div>
+                      )}
+                      {sale.formaPagamento === 'cartao_credito' && (
+                        <div className="text-[11px] text-blue-400 mt-0.5 font-mono">
+                          Cartão de Crédito: {formatCurrency(sale.valorFinanciado || 0)}
+                          {sale.numeroParcelas ? ` (${sale.numeroParcelas}x)` : ''}
+                          {sale.taxaCartaoValor ? ` • Taxa MDR: -${formatCurrency(sale.taxaCartaoValor)}` : ''}
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -341,7 +401,7 @@ export const SalesHistoryView: React.FC<SalesHistoryViewProps> = ({
                   <div className="flex items-center justify-between lg:justify-end gap-6 pt-3 lg:pt-0 border-t lg:border-t-0 border-[#2D2D32]">
                     <div className="text-left lg:text-right">
                       <span className="text-[10px] text-[#A7A7AB] uppercase block">Valor da Venda</span>
-                      <span className="text-base font-bold text-[#F5F5F5] font-num">
+                      <span className={`text-base font-bold font-num ${sale.statusVenda === 'cancelada' ? 'line-through text-neutral-500' : 'text-[#F5F5F5]'}`}>
                         {formatCurrency(sale.valorVenda)}
                       </span>
                     </div>
@@ -349,10 +409,10 @@ export const SalesHistoryView: React.FC<SalesHistoryViewProps> = ({
                     {userRole === 'gestor' && (
                       <div className="text-right">
                         <span className="text-[10px] text-[#A7A7AB] uppercase block">Lucro Líquido Real</span>
-                        <span className={`text-base font-bold font-num ${netProfit >= 0 ? 'text-[#22C55E]' : 'text-[#D4130D]'}`}>
+                        <span className={`text-base font-bold font-num ${sale.statusVenda === 'cancelada' ? 'line-through text-neutral-500' : netProfit >= 0 ? 'text-[#22C55E]' : 'text-[#D4130D]'}`}>
                           {formatCurrency(netProfit)}
                         </span>
-                        <span className="block text-[10px] text-[#A7A7AB]">
+                        <span className={`block text-[10px] ${sale.statusVenda === 'cancelada' ? 'text-neutral-500' : marginValue >= 0 ? 'text-[#A7A7AB]' : 'text-[#D4130D] font-semibold'}`}>
                           Margem: {marginPercent}%
                         </span>
                       </div>
@@ -367,6 +427,24 @@ export const SalesHistoryView: React.FC<SalesHistoryViewProps> = ({
                           title="Visualizar Contrato de Venda e Garantia"
                         >
                           <FileText className="w-4 h-4 text-[#A7A7AB]" />
+                        </button>
+                      )}
+
+                      {/* Distrato / Cancelar Venda (Exclusivo Gestor para vendas ativas) */}
+                      {isGestor && sale.statusVenda !== 'cancelada' && onCancelSale && (
+                        <button
+                          onClick={() => {
+                            const motivo = window.prompt(
+                              `Informe a justificativa do distrato/cancelamento da venda #${sale.id.slice(-6)}:\n(O veículo retornará ao estoque como 'Disponível' e a comissão será cancelada).`
+                            );
+                            if (motivo && motivo.trim()) {
+                              onCancelSale(sale.id, motivo.trim());
+                            }
+                          }}
+                          className="p-2 rounded-[8px] bg-[#202024] hover:bg-red-950/40 border border-[#2D2D32] hover:border-red-800/60 text-[#CAC9CA] hover:text-red-400 transition-colors cursor-pointer"
+                          title="Distrato / Cancelar Venda (Reverter para Estoque)"
+                        >
+                          <RotateCcw className="w-4 h-4" />
                         </button>
                       )}
 
@@ -401,7 +479,7 @@ export const SalesHistoryView: React.FC<SalesHistoryViewProps> = ({
                         </p>
                       </div>
 
-                      {!isAddingCost && (
+                      {isGestor && !isAddingCost && (
                         <button
                           onClick={() => setIsAddingPostCostForSaleId(sale.id)}
                           className="flex items-center gap-1.5 px-3 py-1.5 rounded-[6px] bg-[#D4130D] hover:bg-[#E3271F] text-white text-xs font-semibold cursor-pointer shrink-0"
@@ -411,8 +489,8 @@ export const SalesHistoryView: React.FC<SalesHistoryViewProps> = ({
                       )}
                     </div>
 
-                    {/* Form to add post sale cost */}
-                    {isAddingCost && (
+                    {/* Form to add post sale cost (Exclusivo Gestor) */}
+                    {isGestor && isAddingCost && (
                       <div className="p-4 rounded-[8px] bg-[#17171A] border border-[#2D2D32] space-y-3">
                         <div className="text-xs font-bold text-[#F5F5F5]">
                           Novo Lançamento de Pós-Venda
@@ -437,8 +515,11 @@ export const SalesHistoryView: React.FC<SalesHistoryViewProps> = ({
                             <label className={formStyles.label}>Valor (R$)</label>
                             <input
                               type="number"
+                              min={0.01}
+                              max={5000000}
+                              step="0.01"
                               value={postCostData.valor}
-                              onChange={(e) => setPostCostData({ ...postCostData, valor: Number(e.target.value) })}
+                              onChange={(e) => setPostCostData({ ...postCostData, valor: roundCurrency(clampNumber(e.target.value, 0, 5_000_000, 0)) })}
                               className={formStyles.input}
                             />
                           </div>
@@ -447,6 +528,7 @@ export const SalesHistoryView: React.FC<SalesHistoryViewProps> = ({
                             <label className={formStyles.label}>Oficina Parceira</label>
                             <input
                               type="text"
+                              maxLength={100}
                               value={postCostData.oficinaParceira}
                               onChange={(e) => setPostCostData({ ...postCostData, oficinaParceira: e.target.value })}
                               placeholder="Ex: Auto Mecânica Central"
@@ -458,6 +540,7 @@ export const SalesHistoryView: React.FC<SalesHistoryViewProps> = ({
                             <label className={formStyles.label}>Descrição</label>
                             <input
                               type="text"
+                              maxLength={180}
                               value={postCostData.descricao}
                               onChange={(e) => setPostCostData({ ...postCostData, descricao: e.target.value })}
                               placeholder="Ex: Troca de bomba d'água"
@@ -499,7 +582,7 @@ export const SalesHistoryView: React.FC<SalesHistoryViewProps> = ({
                               <th className="py-2.5 px-3 font-semibold">Tipo</th>
                               <th className="py-2.5 px-3 font-semibold">Descrição</th>
                               <th className="py-2.5 px-3 font-semibold">Oficina</th>
-                              <th className="py-2.5 px-3 font-semibold text-right">Valor</th>
+                              {isGestor && <th className="py-2.5 px-3 font-semibold text-right">Valor</th>}
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-[#2D2D32] bg-[#17171A]/40">
@@ -509,9 +592,11 @@ export const SalesHistoryView: React.FC<SalesHistoryViewProps> = ({
                                 <td className="py-2 px-3 font-medium text-[#F5F5F5]">{getPostCostTypeLabel(c.tipo)}</td>
                                 <td className="py-2 px-3 text-[#CAC9CA]">{c.descricao}</td>
                                 <td className="py-2 px-3 text-[#A7A7AB]">{c.oficinaParceira || '-'}</td>
-                                <td className="py-2 px-3 text-right font-bold text-[#D4130D] font-num">
-                                  {formatCurrency(c.valor)}
-                                </td>
+                                {isGestor && (
+                                  <td className="py-2 px-3 text-right font-bold text-[#D4130D] font-num">
+                                    {formatCurrency(c.valor)}
+                                  </td>
+                                )}
                               </tr>
                             ))}
                           </tbody>
