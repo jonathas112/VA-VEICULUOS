@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 
+const MAX_CACHED_PAGES = 25;
+
 export interface UsePaginatedListOptions<T> {
   // Array completo de itens (caso local/híbrido) OU função assíncrona para puxar do banco
   items?: T[];
@@ -22,36 +24,67 @@ export function usePaginatedList<T>({
   const [isLoading, setIsLoading] = useState(false);
   const [isCurrentPageCached, setIsCurrentPageCached] = useState(false);
 
-  // Cache em memória de páginas já visitadas: chave = número da página, valor = array de itens
+  // Cache em memória com limite LRU: chave = número da página, valor = array de itens
   const pageCacheRef = useRef<Map<number, T[]>>(new Map());
+  const prevItemsRef = useRef<T[] | undefined>(items);
 
-  // Limpa o cache sempre que filtros ou dependências mudarem
+  // Helper para adicionar ao cache com limite LRU rígido (max 25 páginas para evitar sobrecarga de memória)
+  const setPageInCache = useCallback((page: number, data: T[]) => {
+    const cache = pageCacheRef.current;
+    if (cache.has(page)) {
+      cache.delete(page);
+    } else if (cache.size >= MAX_CACHED_PAGES) {
+      const oldestKey = cache.keys().next().value;
+      if (oldestKey !== undefined) {
+        cache.delete(oldestKey);
+      }
+    }
+    cache.set(page, data);
+  }, []);
+
+  // Limpa o cache e reinicia página sempre que filtros ou dependências externas mudarem
   useEffect(() => {
     pageCacheRef.current.clear();
     setCurrentPage(1);
     setIsCurrentPageCached(false);
   }, dependencies); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Caso 1: Paginação sobre array fornecido (local/híbrido com cache de páginas visitadas)
+  // Caso 1: Paginação sobre array fornecido (local/híbrido com cache e invalidação imediata por mutação)
   useEffect(() => {
     if (items) {
-      setTotalItems(items.length);
-      const startIdx = (currentPage - 1) * pageSize;
+      const newTotal = items.length;
+      setTotalItems(newTotal);
+
+      // Invalidação imediata quando o array de itens for atualizado/mutado
+      if (prevItemsRef.current !== items) {
+        pageCacheRef.current.clear();
+        prevItemsRef.current = items;
+      }
+
+      const calculatedTotalPages = Math.max(1, Math.ceil(newTotal / pageSize));
+      const safePage = Math.max(1, Math.min(currentPage, calculatedTotalPages));
+
+      if (safePage !== currentPage) {
+        setCurrentPage(safePage);
+        return;
+      }
+
+      const startIdx = (safePage - 1) * pageSize;
       const endIdx = startIdx + pageSize;
 
       // Verifica se a página já existe no cache
-      if (pageCacheRef.current.has(currentPage)) {
-        setPaginatedItems(pageCacheRef.current.get(currentPage)!);
+      if (pageCacheRef.current.has(safePage)) {
+        setPaginatedItems(pageCacheRef.current.get(safePage)!);
         setIsCurrentPageCached(true);
       } else {
-        // Puxa a fatia sob demanda e armazena no cache para consultas futuras
+        // Puxa a fatia sob demanda e armazena no cache LRU
         const slice = items.slice(startIdx, endIdx);
-        pageCacheRef.current.set(currentPage, slice);
+        setPageInCache(safePage, slice);
         setPaginatedItems(slice);
         setIsCurrentPageCached(false);
       }
     }
-  }, [items, currentPage, pageSize]);
+  }, [items, currentPage, pageSize, setPageInCache]);
 
   // Caso 2: Paginação assíncrona puxada sob demanda do banco de dados (ex: Firestore)
   const loadAsyncPage = useCallback(async (pageToLoad: number, currentSize: number) => {
@@ -69,7 +102,7 @@ export function usePaginatedList<T>({
 
     try {
       const result = await fetchPage(pageToLoad, currentSize);
-      pageCacheRef.current.set(pageToLoad, result.data);
+      setPageInCache(pageToLoad, result.data);
       setPaginatedItems(result.data);
       if (typeof result.totalCount === 'number') {
         setTotalItems(result.totalCount);
@@ -79,7 +112,7 @@ export function usePaginatedList<T>({
     } finally {
       setIsLoading(false);
     }
-  }, [fetchPage]);
+  }, [fetchPage, setPageInCache]);
 
   useEffect(() => {
     if (fetchPage) {
@@ -110,11 +143,11 @@ export function usePaginatedList<T>({
       loadAsyncPage(currentPage, pageSize);
     } else if (items) {
       const slice = items.slice(0, pageSize);
-      pageCacheRef.current.set(1, slice);
+      setPageInCache(1, slice);
       setPaginatedItems(slice);
       setCurrentPage(1);
     }
-  }, [fetchPage, items, currentPage, pageSize, loadAsyncPage]);
+  }, [fetchPage, items, currentPage, pageSize, loadAsyncPage, setPageInCache]);
 
   return {
     currentPage,

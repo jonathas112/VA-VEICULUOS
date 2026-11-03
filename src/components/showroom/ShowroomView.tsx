@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { 
   Car, Search, ChevronDown, SlidersHorizontal, 
-  MapPin, Phone, MessageCircle, X, RotateCcw, Check, Sparkles
+  MapPin, Phone, MessageCircle, X, RotateCcw, Check
 } from 'lucide-react';
 import { Vehicle, StoreProfile, VehicleType } from '../../types';
 import { formatCurrency, formatNumber } from '../../utils/formatters';
@@ -38,6 +38,13 @@ export const ShowroomView: React.FC<ShowroomViewProps> = ({
   
   // Modal de Detalhes
   const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null);
+
+  // Sanitização do nome da loja garantindo remoção de resíduos como "TESTE"
+  const cleanStoreName = useMemo(() => {
+    return (store?.nomeFantasia || 'VA Veículos Multimarcas')
+      .replace(/\s*\bteste\b\s*/gi, ' ')
+      .trim();
+  }, [store?.nomeFantasia]);
 
   // Controle de Seções de Sanfona Abertas no Painel Lateral
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
@@ -525,36 +532,7 @@ export const ShowroomView: React.FC<ShowroomViewProps> = ({
   return (
     <div className="min-h-screen bg-[#080809] text-[#F5F5F5] flex flex-col font-sans">
       
-      {/* 1. Header Hero Minimalista da Vitrine */}
-      <section className="relative overflow-hidden pt-10 pb-12 border-b border-[#2D2D32] bg-[#0D0D0F]">
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-3/4 h-48 bg-[#D4130D]/10 blur-3xl pointer-events-none rounded-full" />
-        
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10 text-center">
-          <div className="flex justify-center mb-4">
-            <BrandLogo 
-              store={store} 
-              size="lg" 
-              textClassName="text-lg sm:text-xl font-bold"
-              subtextClassName="text-[10px] text-[#A7A7AB]"
-            />
-          </div>
-
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#17171A] border border-[#2D2D32] text-[#CAC9CA] text-xs font-semibold uppercase tracking-wider mb-4">
-            <Sparkles className="w-3.5 h-3.5 text-[#D4130D]" />
-            VA Veículos • {store.cidade} - {store.estado} • Seminovos com Garantia
-          </div>
-
-          <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight font-display text-white max-w-3xl mx-auto leading-tight">
-            Encontre o carro perfeito para a sua <span className="text-[#D4130D]">garagem</span>.
-          </h1>
-
-          <p className="mt-3 text-xs sm:text-sm text-[#A7A7AB] max-w-xl mx-auto leading-relaxed">
-            Consulte o estoque selecionado da VA Veículos em Areial - PB. Laudo cautelar, garantia e atendimento com quem entende de procedência.
-          </p>
-        </div>
-      </section>
-
-      {/* 2. Barra Superior de Busca & Ações Rápidas */}
+      {/* 1. Barra Superior de Busca & Ações Rápidas */}
       <section className="sticky top-14 z-20 bg-[#080809]/95 backdrop-blur-md border-b border-[#2D2D32] py-3.5 shadow-xl">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-3">
           
@@ -563,6 +541,7 @@ export const ShowroomView: React.FC<ShowroomViewProps> = ({
             <Search className="w-4 h-4 text-[#68686E] absolute left-3.5 top-1/2 -translate-y-1/2" />
             <input
               type="text"
+              maxLength={100}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               placeholder="Buscar por marca, modelo, versão ou cor..."
@@ -697,7 +676,7 @@ export const ShowroomView: React.FC<ShowroomViewProps> = ({
             ) : (
               
               /* GRADE DE CARROS (Estilo idêntico ao modelo da imagem, nas cores do VA Veículos) */
-              <div className="space-y-8">
+              <div className="flex-1 flex flex-col justify-between min-h-[520px]">
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
                   {pagination.paginatedItems.map((vehicle) => (
                     <div
@@ -754,7 +733,7 @@ export const ShowroomView: React.FC<ShowroomViewProps> = ({
                           {/* Localização da Loja com ícone de pin (ex: 📍 VA VEÍCULOS • AREIAL - PB) */}
                           <div className="flex items-center gap-1.5 text-[11px] text-[#A7A7AB] uppercase font-semibold pt-1">
                             <MapPin className="w-3.5 h-3.5 text-[#D4130D] shrink-0" />
-                            <span className="truncate">{store.nomeFantasia || 'VA Veículos'} • {store.cidade || 'Areial'} - {store.estado || 'PB'}</span>
+                            <span className="truncate">{cleanStoreName} • {store.cidade || 'Areial'} - {store.estado || 'PB'}</span>
                           </div>
                         </div>
 
@@ -779,7 +758,7 @@ export const ShowroomView: React.FC<ShowroomViewProps> = ({
 
                 {/* Paginação do Showroom com Cache em Memória */}
                 {pagination.totalItems > 0 && (
-                  <div className="pt-4">
+                  <div className="mt-auto pt-10">
                     <PaginationControls
                       currentPage={pagination.currentPage}
                       totalPages={pagination.totalPages}
@@ -888,7 +867,7 @@ export const ShowroomView: React.FC<ShowroomViewProps> = ({
           </div>
 
           <div className="pt-6 border-t border-[#2D2D32] flex flex-col sm:flex-row items-center justify-between gap-2 text-[11px] text-[#68686E]">
-            <p>© {new Date().getFullYear()} {store.nomeFantasia}. Todos os direitos reservados.</p>
+            <p>© {new Date().getFullYear()} {cleanStoreName}. Todos os direitos reservados.</p>
             <div className="flex items-center gap-4">
               <p>VA Veículos • Sistema Integrado de Gestão Automotiva · Areial - PB</p>
               <button

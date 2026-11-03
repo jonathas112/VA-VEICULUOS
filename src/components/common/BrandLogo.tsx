@@ -24,7 +24,8 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({
 }) => {
   const [imgError, setImgError] = React.useState(false);
   const logoUrl = store?.logoUrl;
-  const storeName = store?.nomeFantasia || 'VA VEÍCULOS';
+  const rawStoreName = store?.nomeFantasia || 'VA VEÍCULOS';
+  const storeName = rawStoreName.replace(/\s*\bteste\b\s*/gi, ' ').trim();
   const city = store?.cidade || 'Areial';
   const state = store?.estado || 'PB';
 

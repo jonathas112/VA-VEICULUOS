@@ -170,6 +170,7 @@ export const AuditLogView: React.FC<AuditLogViewProps> = () => {
           <Search className="w-4 h-4 text-neutral-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
           <input
             type="text"
+            maxLength={100}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             placeholder="Pesquisar por descrição, usuário, placa, ID ou payload..."

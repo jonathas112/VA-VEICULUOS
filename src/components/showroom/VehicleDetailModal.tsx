@@ -277,26 +277,16 @@ export const VehicleDetailModal: React.FC<VehicleDetailModalProps> = ({
                   <span>Concessionária</span>
                 </div>
                 <strong className="text-white uppercase font-semibold">
-                  {store.nomeFantasia || 'VA VEÍCULOS'}
+                  {(store.nomeFantasia || 'VA VEÍCULOS').replace(/\s*\bteste\b\s*/gi, ' ').trim()}
                 </strong>
               </div>
             </div>
 
-            {/* Preço em Destaque Grande e Link de Contato */}
+            {/* Preço em Destaque Grande */}
             <div className="pt-2">
-              <div className="flex items-baseline justify-between gap-4">
-                <span className="text-3xl sm:text-4xl font-black text-white font-display tracking-tight">
-                  {formatCurrency(vehicle.valorAnunciado)}
-                </span>
-
-                <button
-                  type="button"
-                  onClick={() => handleWhatsAppContact()}
-                  className="text-xs text-[#D4130D] hover:text-[#E3271F] font-bold underline decoration-dotted transition-colors cursor-pointer"
-                >
-                  Solicitar Contato
-                </button>
-              </div>
+              <span className="text-3xl sm:text-4xl font-black text-white font-display tracking-tight block">
+                {formatCurrency(vehicle.valorAnunciado)}
+              </span>
             </div>
 
             {/* Botão de Ação: "Fale com o vendedor" */}

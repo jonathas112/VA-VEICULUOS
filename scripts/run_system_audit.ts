@@ -428,13 +428,13 @@ storageMap.clear();
 
   const updatedStore: StoreProfile = {
     ...defaultStore,
-    nomeFantasia: 'VA Veículos Multimarcas Teste',
+    nomeFantasia: 'VA Veículos Multimarcas',
     cidade: 'Areial',
     estado: 'PB'
   };
   storageService.saveStoreProfile(updatedStore, 'Testador Auditoria');
   const readBackStore = storageService.getStoreProfile();
-  record('STO_02', 'Storage', 'saveStoreProfile e leitura de volta', readBackStore.nomeFantasia === 'VA Veículos Multimarcas Teste', 'VA Veículos Multimarcas Teste', readBackStore.nomeFantasia);
+  record('STO_02', 'Storage', 'saveStoreProfile e leitura de volta', readBackStore.nomeFantasia === 'VA Veículos Multimarcas', 'VA Veículos Multimarcas', readBackStore.nomeFantasia);
 }
 
 // 3.2 Veículos

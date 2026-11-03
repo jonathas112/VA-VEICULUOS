@@ -48,32 +48,53 @@
   background: #343439;
 }
 
+/* Utilitário para ocultar scrollbars nativas mantendo navegação e scroll */
+.no-scrollbar::-webkit-scrollbar {
+  display: none !important;
+}
+.no-scrollbar {
+  -ms-overflow-style: none !important;
+  scrollbar-width: none !important;
+}
+
 @media print {
   @page {
     size: A4 portrait;
-    margin: 15mm 18mm 15mm 18mm;
+    margin: 14mm 16mm 14mm 16mm;
   }
 
-  html, body {
+  html, body, #root {
     background: #ffffff !important;
     color: #111827 !important;
     height: auto !important;
-    min-height: auto !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
     overflow: visible !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
 
-  /* Oculta navegacao e botoes interativos */
+  /* Neutraliza min-h-screen e containers flex que forçariam página extra em branco */
+  [class*="min-h-screen"], [class*="min-h-["] {
+    min-height: 0 !important;
+    height: auto !important;
+  }
+
+  /* Oculta navegação, barras, KPIs e controles interativos */
   nav, aside, header, footer, button, .no-print {
     display: none !important;
   }
 
-  /* Desfaz posicoes fixas e restricoes de overflow do modal para permitir paginacao correta */
+  /* Desfaz posições fixas e restrições de overflow de modais para paginação limpa */
   .fixed, [class*="fixed"] {
     position: static !important;
     background: transparent !important;
     padding: 0 !important;
+    margin: 0 !important;
     overflow: visible !important;
     height: auto !important;
+    min-height: 0 !important;
     max-height: none !important;
   }
 
@@ -81,19 +102,42 @@
     overflow: visible !important;
     max-height: none !important;
     height: auto !important;
+    min-height: 0 !important;
     box-shadow: none !important;
     border: none !important;
   }
 
-  #printable-document, #documents-view-sheet, #letterhead-test-sheet {
+  #printable-document, #documents-view-sheet, #letterhead-test-sheet, .a4-print-target {
     box-shadow: none !important;
     border: none !important;
+    border-radius: 0 !important;
     padding: 0 !important;
     margin: 0 !important;
     width: 100% !important;
     max-width: 100% !important;
     background: #ffffff !important;
     color: #111827 !important;
-    min-height: auto !important;
+    height: auto !important;
+    min-height: 0 !important;
+  }
+
+  .a4-clause-group, .a4-clause-paragraph {
+    orphans: 3;
+    widows: 3;
+  }
+
+  .a4-clause-heading, .a4-doc-title-wrap {
+    page-break-after: avoid !important;
+    break-after: avoid !important;
+  }
+
+  .signature-keep-together, .signature-block, .footer-block, .a4-header {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  .footer-block {
+    margin-bottom: 0 !important;
+    padding-bottom: 0 !important;
   }
 }
