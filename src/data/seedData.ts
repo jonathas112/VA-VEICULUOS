@@ -1,4 +1,5 @@
 import { FormerOwner, Vehicle, Sale, Financier, Salesperson, StoreProfile, SystemUser } from '../types';
+import { hashPassword } from '../utils/security';
 
 export const SEED_STORE: StoreProfile = {
   nomeFantasia: 'VA Veículos',
@@ -41,9 +42,9 @@ export const SEED_FINANCIERS: Financier[] = [
 ];
 
 export const SEED_SALESPEOPLE: Salesperson[] = [
-  { id: 'vend_carlos', nome: 'Carlos Eduardo Ramos', email: 'carlos@vaveiculos.com.br', telefone: '(83) 98111-2233', metaMensal: 5, ativo: true, senha: '1234' },
-  { id: 'vend_juliana', nome: 'Juliana Mendes Costa', email: 'juliana@vaveiculos.com.br', telefone: '(83) 98222-3344', metaMensal: 6, ativo: true, senha: '1234' },
-  { id: 'vend_roberto', nome: 'Roberto Silveira Neto', email: 'roberto@vaveiculos.com.br', telefone: '(83) 98333-4455', metaMensal: 4, ativo: true, senha: '1234' }
+  { id: 'vend_carlos', nome: 'Carlos Eduardo Ramos', email: 'carlos@vaveiculos.com.br', telefone: '(83) 98111-2233', metaMensal: 5, ativo: true },
+  { id: 'vend_juliana', nome: 'Juliana Mendes Costa', email: 'juliana@vaveiculos.com.br', telefone: '(83) 98222-3344', metaMensal: 6, ativo: true },
+  { id: 'vend_roberto', nome: 'Roberto Silveira Neto', email: 'roberto@vaveiculos.com.br', telefone: '(83) 98333-4455', metaMensal: 4, ativo: true }
 ];
 
 export const SEED_USERS: SystemUser[] = [
@@ -53,7 +54,7 @@ export const SEED_USERS: SystemUser[] = [
     email: 'admin@vaveiculos.com.br',
     telefone: '(83) 98765-4321',
     papel: 'gestor',
-    senha: '1234',
+    senha: hashPassword('Va@2026!', 'admin@vaveiculos.com.br'),
     ativo: true,
     dataCriacao: '2026-01-01T08:00:00Z'
   },
@@ -63,7 +64,7 @@ export const SEED_USERS: SystemUser[] = [
     email: 'carlos@vaveiculos.com.br',
     telefone: '(83) 98111-2233',
     papel: 'vendedor',
-    senha: '1234',
+    senha: hashPassword('Va@2026!', 'carlos@vaveiculos.com.br'),
     metaMensal: 5,
     ativo: true,
     dataCriacao: '2026-01-10T09:00:00Z'
@@ -74,7 +75,7 @@ export const SEED_USERS: SystemUser[] = [
     email: 'juliana@vaveiculos.com.br',
     telefone: '(83) 98222-3344',
     papel: 'vendedor',
-    senha: '1234',
+    senha: hashPassword('Va@2026!', 'juliana@vaveiculos.com.br'),
     metaMensal: 6,
     ativo: true,
     dataCriacao: '2026-02-01T10:00:00Z'
@@ -85,7 +86,7 @@ export const SEED_USERS: SystemUser[] = [
     email: 'roberto@vaveiculos.com.br',
     telefone: '(83) 98333-4455',
     papel: 'vendedor',
-    senha: '1234',
+    senha: hashPassword('Va@2026!', 'roberto@vaveiculos.com.br'),
     metaMensal: 4,
     ativo: true,
     dataCriacao: '2026-02-15T11:00:00Z'
