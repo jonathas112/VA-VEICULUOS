@@ -1,8 +1,8 @@
 /**
- * Utilitário de compressão de imagens para a VA Veículos.
+ * Utilitário de compressão e sanitização de imagens para a VA Veículos.
  * Permite envio de até 10 fotos por veículo e logotipo da loja
  * com compressão adaptativa em Canvas no navegador, garantindo
- * alta qualidade e sincronização ágil no Firestore e cache local.
+ * alta qualidade, sanitização e prevenção contra uploads maliciosos (ex: SVG/XSS).
  */
 
 export interface CompressionOptions {
@@ -11,6 +11,9 @@ export interface CompressionOptions {
   quality?: number; // 0 a 1
   mimeType?: 'image/jpeg' | 'image/webp';
 }
+
+const ALLOWED_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
+const MAX_INPUT_FILE_SIZE = 15 * 1024 * 1024; // 15 MB limite de segurança para evitar travamento da aba
 
 export const compressImageFile = async (
   file: File,
@@ -24,9 +27,14 @@ export const compressImageFile = async (
   } = options;
 
   return new Promise((resolve, reject) => {
-    // Validação básica
-    if (!file.type.startsWith('image/')) {
-      return reject(new Error('O arquivo selecionado não é uma imagem válida.'));
+    // 1. Whitelist estrita de MIME types rasterizados (bloqueia image/svg+xml e outros formatos com risco de script)
+    if (!ALLOWED_MIME_TYPES.has(file.type)) {
+      return reject(new Error('Formato de imagem não permitido. Envie apenas arquivos JPEG, PNG ou WebP.'));
+    }
+
+    // 2. Validação de tamanho máximo de arquivo de entrada
+    if (file.size > MAX_INPUT_FILE_SIZE) {
+      return reject(new Error('O arquivo selecionado excede o limite máximo de 15 MB.'));
     }
 
     const reader = new FileReader();
@@ -39,7 +47,7 @@ export const compressImageFile = async (
       img.onload = () => {
         let { width, height } = img;
 
-        // Redimensionamento proporcional
+        // Redimensionamento proporcional seguro
         if (width > maxWidth || height > maxHeight) {
           const ratio = Math.min(maxWidth / width, maxHeight / height);
           width = Math.round(width * ratio);
@@ -52,7 +60,7 @@ export const compressImageFile = async (
 
         const ctx = canvas.getContext('2d');
         if (!ctx) {
-          return resolve(event.target?.result as string); // Fallback direto
+          return reject(new Error('Contexto gráfico indisponível para sanitização e rasterização da imagem.'));
         }
 
         // Fundo branco limpo para formatos com perda (JPEG)

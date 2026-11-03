@@ -92,6 +92,14 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({ status, label, size = 
       dotColor = '#22C55E';
       displayLabel = displayLabel || 'APROVADO';
       break;
+    case 'cancelada':
+    case 'cancelado':
+      bg = 'bg-[#EF4444]/15';
+      text = 'text-[#EF4444]';
+      border = 'border-[#EF4444]/30';
+      dotColor = '#EF4444';
+      displayLabel = displayLabel || 'CANCELADA (DISTRATO)';
+      break;
     default:
       displayLabel = displayLabel || status.toUpperCase();
       break;
@@ -286,8 +294,8 @@ export const UnderlineTabs: React.FC<UnderlineTabsProps> = ({
   onTabChange
 }) => {
   return (
-    <div className="border-b border-[#2D2D32] mb-6 overflow-x-auto no-scrollbar">
-      <nav className="flex space-x-6 min-w-max">
+    <div className="border-b border-[#2D2D32] mb-6 overflow-x-auto no-scrollbar scroll-smooth">
+      <nav className="flex items-center gap-4 sm:gap-6 min-w-max">
         {tabs.map((tab) => {
           const isActive = activeTab === tab.id;
           const Icon = tab.icon;
@@ -295,7 +303,7 @@ export const UnderlineTabs: React.FC<UnderlineTabsProps> = ({
             <button
               key={tab.id}
               onClick={() => onTabChange(tab.id)}
-              className={`relative py-3 text-sm font-medium transition-colors flex items-center gap-2 border-b-2 -mb-[1px] focus:outline-none cursor-pointer ${
+              className={`relative py-3 text-sm font-medium transition-colors flex items-center gap-2 border-b-2 -mb-px focus:outline-none cursor-pointer whitespace-nowrap ${
                 isActive
                   ? 'text-[#F5F5F5] font-semibold border-[#D4130D]'
                   : 'text-[#A7A7AB] hover:text-[#F5F5F5] border-transparent'
@@ -305,7 +313,7 @@ export const UnderlineTabs: React.FC<UnderlineTabsProps> = ({
               <span>{tab.label}</span>
               {typeof tab.count === 'number' && (
                 <span
-                  className={`ml-1 text-[11px] px-1.5 py-0.2 rounded-full font-bold ${
+                  className={`ml-1 text-[11px] min-w-[20px] h-[20px] px-1.5 inline-flex items-center justify-center rounded-full font-bold leading-none ${
                     isActive
                       ? 'bg-[#D4130D] text-white'
                       : 'bg-[#202024] text-[#CAC9CA] border border-[#2D2D32]'

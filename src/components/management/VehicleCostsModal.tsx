@@ -1,12 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
-  X, Plus, DollarSign, Calculator, Trash2, ShieldCheck, 
-  AlertTriangle, Wrench, Sparkles, FileText, CheckCircle2, TrendingUp, AlertCircle
+  X, Plus, Calculator, Wrench, Lock
 } from 'lucide-react';
 import { Vehicle, VehicleExpense } from '../../types';
 import { 
-  formatCurrency, computeAcquisitionCost, 
-  computePatioExpenses, computePreSaleTotalCost, computeMarginPercent 
+  formatCurrency, computeAcquisitionCost, computeStoreDetranDebt,
+  computePatioExpenses, computePreSaleTotalCost, computeMarginPercent,
+  roundCurrency, toCents, fromCents, clampNumber
 } from '../../utils/formatters';
 
 interface VehicleCostsModalProps {
@@ -32,20 +32,33 @@ export const VehicleCostsModal: React.FC<VehicleCostsModalProps> = ({
   // Simulator
   const [simulatedPrice, setSimulatedPrice] = useState<number>(vehicle?.valorAnunciado || 100000);
 
+  useEffect(() => {
+    if (isOpen && vehicle) {
+      setSimulatedPrice(roundCurrency(vehicle.valorAnunciado || 100000));
+    }
+  }, [isOpen, vehicle?.id]);
+
   if (!isOpen || !vehicle) return null;
 
   const acquisitionCost = computeAcquisitionCost(vehicle);
+  const storeDetranDebt = computeStoreDetranDebt(vehicle);
   const patioExpensesTotal = computePatioExpenses(vehicle);
-  const totalCostBeforeSale = acquisitionCost + patioExpensesTotal;
+  const totalCostBeforeSale = computePreSaleTotalCost(vehicle);
 
-  // Simulation math
-  const simulatedMarginR$ = simulatedPrice - totalCostBeforeSale;
+  // Simulation math (em centavos exatos)
+  const simulatedMarginR$ = fromCents(toCents(simulatedPrice) - toCents(totalCostBeforeSale));
   const simulatedMarginPercent = computeMarginPercent(simulatedPrice, totalCostBeforeSale);
+  const sliderMin = Math.max(100, Math.round(totalCostBeforeSale * 0.7));
+  const sliderMax = Math.max(sliderMin + 5000, Math.round(Math.max(totalCostBeforeSale, vehicle.valorAnunciado || 0) * 1.6));
 
   const handleAddExpenseSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!descricao.trim() || isNaN(valor) || valor <= 0) {
-      alert('Preencha a descrição e um valor positivo.');
+    if (vehicle.status === 'vendido') {
+      alert('Este veículo já foi vendido. Lance despesas subsequentes na aba Pós-Venda & Garantias.');
+      return;
+    }
+    if (!data || !descricao.trim() || isNaN(valor) || !Number.isFinite(valor) || toCents(valor) <= 0 || valor > 5_000_000) {
+      alert('Preencha a data, a descrição e um valor positivo válido (até R$ 5.000.000,00).');
       return;
     }
 
@@ -53,9 +66,9 @@ export const VehicleCostsModal: React.FC<VehicleCostsModalProps> = ({
       id: 'exp_' + Date.now(),
       data,
       categoria,
-      descricao,
-      valor: Number(valor),
-      responsavel: responsavel || undefined
+      descricao: descricao.trim(),
+      valor: roundCurrency(valor),
+      responsavel: responsavel.trim() || undefined
     };
 
     onAddExpense(vehicle.id, newExpense);
@@ -65,7 +78,7 @@ export const VehicleCostsModal: React.FC<VehicleCostsModalProps> = ({
 
   const getCategoryLabel = (cat: VehicleExpense['categoria']) => {
     const labels: Record<string, string> = {
-      mecanica: 'Mecânica / Motor',
+      mecanica: 'Mecânica Geral',
       funilaria_pintura: 'Funilaria e Pintura',
       lavagem_estetica: 'Lavagem & Estética',
       despachante_doc: 'Despachante & Doc',
@@ -113,7 +126,7 @@ export const VehicleCostsModal: React.FC<VehicleCostsModalProps> = ({
                 {formatCurrency(acquisitionCost)}
               </span>
               <span className="text-[10px] text-neutral-500 block mt-0.5">
-                Pago: {formatCurrency(vehicle.valorPago)} {vehicle.debitoDetran?.quemArca === 'loja' ? `+ ${formatCurrency(vehicle.debitoDetran.valor)} (DETRAN)` : ''}
+                Pago: {formatCurrency(vehicle.valorPago)} {storeDetranDebt > 0 ? `+ ${formatCurrency(storeDetranDebt)} (DETRAN)` : ''}
               </span>
             </div>
 
@@ -164,18 +177,20 @@ export const VehicleCostsModal: React.FC<VehicleCostsModalProps> = ({
                 <div className="relative">
                   <input
                     type="number"
-                    step={500}
+                    min={0}
+                    max={50000000}
+                    step="0.01"
                     value={simulatedPrice}
-                    onChange={(e) => setSimulatedPrice(Number(e.target.value))}
-                    className="w-full bg-neutral-900 border border-neutral-700 rounded-xl px-4 py-2.5 text-base font-bold text-amber-400 focus:border-amber-500 focus:outline-none"
+                    onChange={(e) => setSimulatedPrice(roundCurrency(clampNumber(e.target.value, 0, 50_000_000, 0)))}
+                    className="w-full bg-neutral-900 border border-neutral-700 rounded-xl px-4 py-2.5 text-base font-bold text-amber-400 focus:border-amber-500 focus:outline-none tabular-nums"
                   />
                 </div>
                 <input
                   type="range"
-                  min={Math.round(totalCostBeforeSale * 0.9)}
-                  max={Math.round(totalCostBeforeSale * 1.6)}
-                  step={500}
-                  value={simulatedPrice}
+                  min={sliderMin}
+                  max={sliderMax}
+                  step={100}
+                  value={Math.min(sliderMax, Math.max(sliderMin, simulatedPrice))}
                   onChange={(e) => setSimulatedPrice(Number(e.target.value))}
                   className="w-full accent-amber-500 cursor-pointer h-1.5 bg-neutral-800 rounded-lg"
                 />
@@ -214,7 +229,15 @@ export const VehicleCostsModal: React.FC<VehicleCostsModalProps> = ({
             </div>
           </div>
 
-          {/* Form: Add new Patio Cost */}
+          {/* Form: Add new Patio Cost (Bloqueado se veículo já vendido) */}
+          {vehicle.status === 'vendido' ? (
+            <div className="bg-neutral-950 p-4 rounded-xl border border-neutral-800 flex items-center gap-3 text-xs text-neutral-300">
+              <Lock className="w-4 h-4 text-amber-400 shrink-0" />
+              <span>
+                <strong className="text-white">Custos Pré-Venda Congelados (Veículo Vendido):</strong> Este veículo já possui venda concretizada. Despesas posteriores à venda devem ser lançadas em <strong>Histórico de Vendas &gt; Pós-Venda &amp; Garantias</strong> para integridade do DRE.
+              </span>
+            </div>
+          ) : (
           <div className="bg-neutral-950 p-4 rounded-xl border border-neutral-800">
             <h4 className="text-xs font-bold text-amber-400 uppercase tracking-wider mb-3 flex items-center gap-2">
               <Plus className="w-4 h-4" />
@@ -240,7 +263,7 @@ export const VehicleCostsModal: React.FC<VehicleCostsModalProps> = ({
                   onChange={(e) => setCategoria(e.target.value as any)}
                   className="w-full bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 text-xs text-white focus:border-amber-500 focus:outline-none"
                 >
-                  <option value="mecanica">Mecânica / Motor</option>
+                  <option value="mecanica">Mecânica Geral</option>
                   <option value="funilaria_pintura">Funilaria e Pintura</option>
                   <option value="lavagem_estetica">Lavagem & Estética</option>
                   <option value="despachante_doc">Despachante & Documentação</option>
@@ -255,18 +278,20 @@ export const VehicleCostsModal: React.FC<VehicleCostsModalProps> = ({
                 <input
                   type="number"
                   required
-                  min={1}
-                  step={10}
+                  min={0.01}
+                  max={5000000}
+                  step="0.01"
                   value={valor}
-                  onChange={(e) => setValor(Number(e.target.value))}
-                  className="w-full bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 text-xs font-bold text-amber-400 focus:border-amber-500 focus:outline-none"
+                  onChange={(e) => setValor(roundCurrency(clampNumber(e.target.value, 0, 5_000_000, 0)))}
+                  className="w-full bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 text-xs font-bold text-amber-400 focus:border-amber-500 focus:outline-none tabular-nums"
                 />
               </div>
 
               <div>
-                <label className="text-xs text-neutral-400 block mb-1">Oficina / Responsável</label>
+                <label className="text-xs text-neutral-400 block mb-1">Oficina Responsável</label>
                 <input
                   type="text"
+                  maxLength={100}
                   value={responsavel}
                   onChange={(e) => setResponsavel(e.target.value)}
                   placeholder="Ex: Auto Mecânica Ramos"
@@ -275,10 +300,11 @@ export const VehicleCostsModal: React.FC<VehicleCostsModalProps> = ({
               </div>
 
               <div className="sm:col-span-3">
-                <label className="text-xs text-neutral-400 block mb-1">Descrição do Serviço / Peça *</label>
+                <label className="text-xs text-neutral-400 block mb-1">Descrição do Serviço *</label>
                 <input
                   type="text"
                   required
+                  maxLength={180}
                   value={descricao}
                   onChange={(e) => setDescricao(e.target.value)}
                   placeholder="Ex: Troca de óleo, pastilhas de freio e filtro de ar condicionado"
@@ -297,6 +323,7 @@ export const VehicleCostsModal: React.FC<VehicleCostsModalProps> = ({
               </div>
             </form>
           </div>
+          )}
 
           {/* Table of existing patio expenses */}
           <div>
@@ -316,7 +343,7 @@ export const VehicleCostsModal: React.FC<VehicleCostsModalProps> = ({
                       <th className="py-2.5 px-3">Data</th>
                       <th className="py-2.5 px-3">Categoria</th>
                       <th className="py-2.5 px-3">Descrição</th>
-                      <th className="py-2.5 px-3">Oficina / Prestador</th>
+                      <th className="py-2.5 px-3">Oficina Prestadora</th>
                       <th className="py-2.5 px-3 text-right">Valor</th>
                     </tr>
                   </thead>

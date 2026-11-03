@@ -28,8 +28,7 @@ const confirmLogs: string[] = [];
 
 import { 
   formatCurrency, maskCurrency, unmaskCurrency, maskCPF, isValidCPF,
-  maskCNPJ, isValidCNPJ, maskPhone, maskCEP, maskPlate, maskRenavam,
-  formatDate, formatDateTime, formatDateLong, getMonthYearKey, getMonthName,
+  maskCNPJ, isValidCNPJ, maskPhone, isValidPhone, maskCEP, isValidCEP, maskPlate, isValidPlate, maskRenavam, isValidRenavam, isValidYear,
   numberToWordsPtBr, computeAcquisitionCost, computePatioExpenses,
   computePreSaleTotalCost, computePostSaleCosts, computeTotalSaleCost,
   computeNetProfit, computeGrossProfit, computeMarginPercent
@@ -37,8 +36,8 @@ import {
 
 import { storageService } from '../src/services/storage';
 import { auditLogger } from '../src/services/auditLogger';
-import { renderTemplate, AVAILABLE_MERGE_TAGS } from '../src/utils/templateEngine';
-import { Vehicle, Sale, FormerOwner, Financier, Salesperson, StoreProfile, ContractTemplate } from '../src/types';
+import { renderTemplate } from '../src/utils/templateEngine';
+import { Vehicle, Sale, FormerOwner, Financier, Salesperson, StoreProfile } from '../src/types';
 
 interface TestResult {
   id: string;
@@ -181,6 +180,45 @@ console.log('-> Executando testes da Seção 1: Formatações e Máscaras...');
   const renavam = maskRenavam('01234567890123');
   const passRenavam = renavam === '01234567890' && renavam.length === 11;
   record('RNV_01', 'RENAVAM', 'maskRenavam trunca em 11 dígitos', passRenavam, '01234567890', renavam);
+
+  // Validações adicionadas para campos numéricos e máscaras
+  const validPhoneCel = isValidPhone('(83) 98765-4321');
+  record('TEL_03', 'Validação Telefone', 'isValidPhone celular válido', validPhoneCel, 'true', String(validPhoneCel));
+
+  const validPhoneFixo = isValidPhone('(83) 3381-1234');
+  record('TEL_04', 'Validação Telefone', 'isValidPhone fixo válido', validPhoneFixo, 'true', String(validPhoneFixo));
+
+  const invalidPhoneUserSpam = isValidPhone('8399999999999999999'); // Exemplo enviado pelo usuário
+  record('TEL_05', 'Validação Telefone', 'isValidPhone rejeita dígitos excedentes (spam)', !invalidPhoneUserSpam, 'false', String(invalidPhoneUserSpam));
+
+  const invalidPhoneIncomplete = isValidPhone('83988');
+  record('TEL_06', 'Validação Telefone', 'isValidPhone rejeita telefone incompleto', !invalidPhoneIncomplete, 'false', String(invalidPhoneIncomplete));
+
+  const validCEP = isValidCEP('58140-000');
+  record('CEP_02', 'Validação CEP', 'isValidCEP cep formatado válido', validCEP, 'true', String(validCEP));
+
+  const invalidCEP = isValidCEP('123');
+  record('CEP_03', 'Validação CEP', 'isValidCEP rejeita cep incompleto', !invalidCEP, 'false', String(invalidCEP));
+
+  const validPlate1 = isValidPlate('ABC-1234');
+  const validPlate2 = isValidPlate('BRA2E19');
+  record('PLC_03', 'Validação Placa', 'isValidPlate tradicional e Mercosul válidas', validPlate1 && validPlate2, 'true', String(validPlate1 && validPlate2));
+
+  const invalidPlate = isValidPlate('INVALIDA123');
+  record('PLC_04', 'Validação Placa', 'isValidPlate rejeita placa inválida', !invalidPlate, 'false', String(invalidPlate));
+
+  const validRenavamCheck = isValidRenavam('01234567890');
+  record('RNV_02', 'Validação RENAVAM', 'isValidRenavam com 11 dígitos', validRenavamCheck, 'true', String(validRenavamCheck));
+
+  const invalidRenavamCheck = isValidRenavam('12345');
+  record('RNV_03', 'Validação RENAVAM', 'isValidRenavam rejeita menos de 9 dígitos', !invalidRenavamCheck, 'false', String(invalidRenavamCheck));
+
+  const validYearCheck = isValidYear(2024);
+  record('YR_01', 'Validação Ano', 'isValidYear(2024)', validYearCheck, 'true', String(validYearCheck));
+
+  const invalidYearPast = isValidYear(1800);
+  const invalidYearFuture = isValidYear(2100);
+  record('YR_02', 'Validação Ano', 'isValidYear rejeita fora do intervalo 1900..anoAtual+2', !invalidYearPast && !invalidYearFuture, 'false', String(invalidYearPast || invalidYearFuture));
 }
 
 // 1.6 Extenso em Português (numberToWordsPtBr)
@@ -390,13 +428,13 @@ storageMap.clear();
 
   const updatedStore: StoreProfile = {
     ...defaultStore,
-    nomeFantasia: 'VA Veículos Multimarcas Teste',
+    nomeFantasia: 'VA Veículos Multimarcas',
     cidade: 'Areial',
     estado: 'PB'
   };
   storageService.saveStoreProfile(updatedStore, 'Testador Auditoria');
   const readBackStore = storageService.getStoreProfile();
-  record('STO_02', 'Storage', 'saveStoreProfile e leitura de volta', readBackStore.nomeFantasia === 'VA Veículos Multimarcas Teste', 'VA Veículos Multimarcas Teste', readBackStore.nomeFantasia);
+  record('STO_02', 'Storage', 'saveStoreProfile e leitura de volta', readBackStore.nomeFantasia === 'VA Veículos Multimarcas', 'VA Veículos Multimarcas', readBackStore.nomeFantasia);
 }
 
 // 3.2 Veículos
@@ -640,7 +678,7 @@ console.log('-> Executando testes da Seção 4: Conflitos e Integridade de Dados
 
 // Conflito 4.3: Venda com Margem Negativa (Prejuízo Comercial)
 {
-  const vehCost = computePreSaleTotalCost(mockVehicleBase); // 82.500
+  computePreSaleTotalCost(mockVehicleBase); // 82.500
   const saleAtLoss: Sale = {
     ...mockSaleNormal,
     id: 'sale_loss_test',
@@ -696,7 +734,7 @@ console.log('-> Executando testes da Seção 4: Conflitos e Integridade de Dados
   let threwException = false;
   try {
     const v = vehiclesEmpty.find(veh => veh.id === orphanSale.veiculoId);
-    const profit = v ? computeNetProfit(v, orphanSale) : 0;
+    if (v) computeNetProfit(v, orphanSale);
   } catch (e) {
     threwException = true;
   }
@@ -1073,7 +1111,7 @@ console.log('-> Executando testes da Seção 7: Auditoria e Logs...');
 
   const logsAfter = auditLogger.getLogs();
   const foundLog = logsAfter.find(l => l.id === newLog.id);
-  const passLogRecord = foundLog !== undefined && foundLog.acao === 'EDICAO_CONFIGURACOES';
+  const passLogRecord = foundLog !== undefined && foundLog.acao === 'EDICAO_CONFIGURACOES' && logsAfter.length === initialLogsCount + 1;
   record('AUD_01', 'Auditoria/Logs', 'auditLogger.log gera e persiste registro com ID e timestamp', passLogRecord, 'Log registrado', passLogRecord ? `Log gravado com id: ${foundLog?.id}` : 'Falha');
 }
 

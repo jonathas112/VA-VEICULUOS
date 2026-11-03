@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { 
   LayoutDashboard, Car, Users, ShoppingCart, ShieldAlert,
-  DollarSign, Clock, FileText, Settings, ExternalLink,
-  ChevronLeft, ChevronRight, UserCheck, ShieldCheck,
-  X, History
+  DollarSign, Clock, FileText, Settings,
+  UserCheck, ShieldCheck,
+  X, History, LogOut
 } from 'lucide-react';
 import { UserRole, Salesperson, StoreProfile } from '../../types';
 import { BrandLogo } from '../common/BrandLogo';
@@ -18,7 +18,10 @@ interface SidebarProps {
   onSelectTab: (tab: string) => void;
   onOpenShowroom: () => void;
   userRole: UserRole;
+  authenticatedRole?: UserRole;
   setUserRole: (role: UserRole) => void;
+  onRequestElevateToGestor?: () => void;
+  onLogout?: () => void;
   activeSeller: Salesperson | null;
   setActiveSeller: (seller: Salesperson) => void;
   salespeople: Salesperson[];
@@ -48,7 +51,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onSelectTab,
   onOpenShowroom,
   userRole,
+  authenticatedRole = 'vendedor',
   setUserRole,
+  onRequestElevateToGestor,
+  onLogout,
   activeSeller,
   setActiveSeller,
   salespeople,
@@ -82,16 +88,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
       ]
     },
     {
-      title: 'FINANCEIRO & AUDITORIA',
+      title: userRole === 'gestor' ? 'FINANCEIRO & AUDITORIA' : 'COMISSÕES',
       items: [
-        { id: 'financial', label: 'Financeiro', icon: DollarSign },
+        ...(userRole === 'gestor' ? [
+          { id: 'financial', label: 'Financeiro', icon: DollarSign }
+        ] : []),
         { 
           id: 'commissions', 
           label: 'Comissões', 
           icon: Clock,
           badge: pendingCommissionsCount > 0 ? pendingCommissionsCount : undefined
         },
-        { id: 'audit_logs', label: 'Log Geral', icon: ShieldAlert }
+        ...(userRole === 'gestor' ? [
+          { id: 'audit_logs', label: 'Log Geral', icon: ShieldAlert }
+        ] : [])
       ]
     },
     {
@@ -100,11 +110,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
         { id: 'documents', label: 'Documentos', icon: FileText }
       ]
     },
-    {
+    ...(userRole === 'gestor' ? [{
+      title: 'GESTÃO & EQUIPE',
       items: [
+        { id: 'users', label: 'Usuários & Equipe', icon: UserCheck },
         { id: 'settings', label: 'Configurações', icon: Settings }
       ]
-    }
+    }] : [])
   ];
 
   const handleNavClick = (tabId: string) => {
@@ -128,18 +140,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
         >
           <BrandLogo store={store} size="md" isCollapsed={isCollapsed} />
         </button>
-
-        {!isCollapsed && (
-          <button
-            type="button"
-            onClick={toggleCollapse}
-            className="hidden md:flex p-1.5 rounded-[6px] text-[#A7A7AB] hover:text-[#F5F5F5] hover:bg-[#17171A] border border-transparent hover:border-[#2D2D32] transition-colors cursor-pointer"
-            title="Recolher barra lateral"
-            aria-label="Recolher barra lateral"
-          >
-            <ChevronLeft className="w-4 h-4" />
-          </button>
-        )}
 
         {/* Mobile close button */}
         {isMobileOpen && (
@@ -227,109 +227,53 @@ export const Sidebar: React.FC<SidebarProps> = ({
         ))}
       </div>
 
-      {/* Footer Profile & Role & Vitrine link */}
+      {/* Footer Profile & Session */}
       <div className="p-3 border-t border-[#2D2D32] space-y-2 bg-[#080809]">
-        {/* Link to public showroom */}
-        <button
-          onClick={onOpenShowroom}
-          className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-[8px] text-xs font-medium text-[#CAC9CA] hover:text-white bg-[#17171A] hover:bg-[#202024] border border-[#2D2D32] transition-colors cursor-pointer ${
-            isCollapsed ? 'justify-center' : ''
-          }`}
-          title="Abrir Vitrine Pública de Veículos"
-        >
-          <ExternalLink className="w-3.5 h-3.5 text-[#D4130D]" />
-          {!isCollapsed && <span>Vitrine Pública</span>}
-        </button>
-
-        {/* User Role Switcher */}
+        {/* Connected User Profile Card */}
         {!isCollapsed ? (
-          <div className="p-2 rounded-[8px] bg-[#17171A] border border-[#2D2D32] text-xs space-y-2">
+          <div className="p-2.5 rounded-[8px] bg-[#17171A] border border-[#2D2D32] text-xs space-y-1">
             <div className="flex items-center justify-between">
-              <span className="text-[11px] text-[#A7A7AB] font-semibold uppercase tracking-wider">
-                Perfil de Acesso
+              <span className="text-[10px] text-[#A7A7AB] font-bold uppercase tracking-wider">
+                Sessão Ativa
               </span>
-              <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                userRole === 'gestor' ? 'bg-[#D4130D]/20 text-[#D4130D]' : 'bg-[#3B82F6]/20 text-[#3B82F6]'
+              <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase ${
+                userRole === 'gestor' 
+                  ? 'bg-[#D4130D]/20 text-[#D4130D] border border-[#D4130D]/30' 
+                  : 'bg-[#3B82F6]/20 text-[#3B82F6] border border-[#3B82F6]/30'
               }`}>
                 {userRole === 'gestor' ? 'Gestor' : 'Vendedor'}
               </span>
             </div>
-
-            <div className="grid grid-cols-2 gap-1 bg-[#202024] p-0.5 rounded-[6px]">
-              <button
-                type="button"
-                onClick={() => setUserRole('gestor')}
-                className={`py-1 text-[11px] font-medium rounded transition-colors ${
-                  userRole === 'gestor' ? 'bg-[#D4130D] text-white font-bold shadow-sm' : 'text-[#A7A7AB] hover:text-[#F5F5F5]'
-                }`}
-              >
-                Gestor
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setUserRole('vendedor');
-                  if (!activeSeller && salespeople.length > 0) setActiveSeller(salespeople[0]);
-                }}
-                className={`py-1 text-[11px] font-medium rounded transition-colors ${
-                  userRole === 'vendedor' ? 'bg-[#D4130D] text-white font-bold shadow-sm' : 'text-[#A7A7AB] hover:text-[#F5F5F5]'
-                }`}
-              >
-                Vendedor
-              </button>
+            <div className="text-xs font-semibold text-[#F5F5F5] truncate">
+              {userRole === 'gestor' ? 'Gestor Geral' : (activeSeller?.nome || 'Consultor de Vendas')}
             </div>
-
-            {userRole === 'vendedor' && salespeople.length > 0 && (
-              <div className="pt-1 border-t border-[#2D2D32]">
-                <select
-                  value={activeSeller?.id || salespeople[0].id}
-                  onChange={(e) => {
-                    const sel = salespeople.find(s => s.id === e.target.value);
-                    if (sel) setActiveSeller(sel);
-                  }}
-                  className="w-full bg-[#202024] text-[#CAC9CA] text-[11px] rounded px-2 py-1 border border-[#343439] focus:outline-none focus:border-[#D4130D]"
-                >
-                  {salespeople.map(s => (
-                    <option key={s.id} value={s.id}>{s.nome}</option>
-                  ))}
-                </select>
-              </div>
-            )}
           </div>
         ) : (
-          <div className="flex justify-center">
-            <button
-              onClick={() => setUserRole(userRole === 'gestor' ? 'vendedor' : 'gestor')}
-              className="w-8 h-8 rounded-full bg-[#17171A] border border-[#2D2D32] flex items-center justify-center text-[#CAC9CA] hover:text-[#F5F5F5]"
-              title={`Perfil: ${userRole === 'gestor' ? 'Gestor' : 'Vendedor'}. Clique para alternar.`}
-            >
+          <div className="flex justify-center" title={`Perfil: ${userRole === 'gestor' ? 'Gestor Geral' : (activeSeller?.nome || 'Vendedor')}`}>
+            <div className="w-8 h-8 rounded-full bg-[#17171A] border border-[#2D2D32] flex items-center justify-center">
               {userRole === 'gestor' ? (
                 <ShieldCheck className="w-4 h-4 text-[#D4130D]" />
               ) : (
                 <UserCheck className="w-4 h-4 text-[#3B82F6]" />
               )}
-            </button>
+            </div>
           </div>
         )}
 
-        {/* Desktop Quick Collapse/Expand Button */}
-        <button
-          type="button"
-          onClick={toggleCollapse}
-          className={`w-full hidden md:flex items-center gap-2.5 px-3 py-2 rounded-[8px] text-xs font-medium text-[#A7A7AB] hover:text-[#F5F5F5] bg-[#17171A]/70 hover:bg-[#202024] border border-[#2D2D32] transition-colors cursor-pointer ${
-            isCollapsed ? 'justify-center' : 'justify-start'
-          }`}
-          title={isCollapsed ? 'Expandir barra lateral' : 'Recolher barra lateral'}
-        >
-          {isCollapsed ? (
-            <ChevronRight className="w-4 h-4 text-[#CAC9CA]" />
-          ) : (
-            <>
-              <ChevronLeft className="w-4 h-4 text-[#CAC9CA]" />
-              <span>Recolher Menu</span>
-            </>
-          )}
-        </button>
+        {/* Botão Encerrar Sessão */}
+        {onLogout && (
+          <button
+            type="button"
+            onClick={onLogout}
+            className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-[8px] text-xs font-medium text-[#F43F5E] hover:text-white bg-[#17171A] hover:bg-[#F43F5E]/20 border border-[#2D2D32] hover:border-[#F43F5E]/40 transition-colors cursor-pointer ${
+              isCollapsed ? 'justify-center' : ''
+            }`}
+            title="Encerrar Sessão do Sistema"
+          >
+            <LogOut className="w-3.5 h-3.5 shrink-0" />
+            {!isCollapsed && <span>Encerrar Sessão</span>}
+          </button>
+        )}
       </div>
 
     </div>
@@ -344,21 +288,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
         }`}
       >
         {sidebarContent}
-
-        {/* Floating edge toggle handle */}
-        <button
-          type="button"
-          onClick={toggleCollapse}
-          className="absolute -right-3 top-20 w-6 h-6 rounded-full bg-[#17171A] border border-[#2D2D32] hover:border-[#D4130D] text-[#A7A7AB] hover:text-white flex items-center justify-center shadow-lg transition-colors cursor-pointer z-40 group"
-          title={isCollapsed ? 'Expandir barra lateral' : 'Recolher barra lateral'}
-          aria-label={isCollapsed ? 'Expandir barra lateral' : 'Recolher barra lateral'}
-        >
-          {isCollapsed ? (
-            <ChevronRight className="w-3.5 h-3.5 group-hover:text-[#D4130D] transition-colors" />
-          ) : (
-            <ChevronLeft className="w-3.5 h-3.5 group-hover:text-[#D4130D] transition-colors" />
-          )}
-        </button>
       </aside>
 
       {/* Mobile Drawer Backdrop and Overlay */}
@@ -368,7 +297,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             className="fixed inset-0 bg-black/70 backdrop-blur-xs"
             onClick={() => setIsMobileOpen(false)}
           />
-          <div className="relative w-[280px] h-full z-10 animate-in slide-in-from-left duration-200">
+          <div className="relative w-[280px] max-w-[85vw] h-full z-10 animate-in slide-in-from-left duration-200">
             {sidebarContent}
           </div>
         </div>

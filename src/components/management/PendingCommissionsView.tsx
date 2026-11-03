@@ -1,47 +1,85 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { 
-  Clock, CheckCircle2, DollarSign, ShieldAlert, 
-  ArrowRight, UserCheck, Car, Calendar, AlertCircle, TrendingUp
+  Clock, CheckCircle2, DollarSign, 
+  UserCheck, Car, AlertCircle
 } from 'lucide-react';
 import { Sale, Vehicle, UserRole } from '../../types';
 import { 
   formatCurrency, computePreSaleTotalCost, 
-  computePostSaleCosts, formatDate 
+  computePostSaleCosts, computeMarginPercent, formatDate,
+  sumCurrency, roundCurrency, toCents, fromCents, clampNumber
 } from '../../utils/formatters';
 import { PageHeader, KpiCard, StatusBadge, formStyles } from '../common/DesignSystem';
+import { PaginationControls } from '../common/PaginationControls';
+import { usePaginatedList } from '../../hooks/usePaginatedList';
 
 interface PendingCommissionsViewProps {
   sales: Sale[];
   vehicles: Vehicle[];
   userRole: UserRole;
-  onAssignCommission: (saleId: string, amount: number) => void;
+  activeSellerId?: string;
+  onAssignCommission: (saleId: string, amount: number, expectedVersion?: number) => void;
 }
 
 export const PendingCommissionsView: React.FC<PendingCommissionsViewProps> = ({
   sales,
   vehicles,
   userRole,
+  activeSellerId,
   onAssignCommission
 }) => {
-  const pendingSales = sales.filter(s => s.comissaoPendente);
+  const isGestor = userRole === 'gestor';
+  const pendingSales = useMemo(() => {
+    return sales.filter(
+      s => s.comissaoPendente && s.statusVenda !== 'cancelada' && (isGestor || !activeSellerId || s.vendedorId === activeSellerId)
+    );
+  }, [sales, isGestor, activeSellerId]);
+
+  // Pre-index O(1) de veículos para visualização instantânea sem loops aninhados
+  const vehiclesById = useMemo(() => {
+    const map = new Map<string, Vehicle>();
+    vehicles.forEach(v => map.set(v.id, v));
+    return map;
+  }, [vehicles]);
+
+  // Paginação sob demanda com cache
+  const pagination = usePaginatedList<Sale>({
+    items: pendingSales,
+    initialPageSize: 5,
+    dependencies: [pendingSales.length]
+  });
 
   // Local state for commission inputs per sale
   const [commissionInputs, setCommissionInputs] = useState<Record<string, number>>({});
 
-  const handleInputChange = (saleId: string, value: number) => {
-    setCommissionInputs(prev => ({ ...prev, [saleId]: value }));
+  const handleInputChange = (saleId: string, value: string | number) => {
+    const safeVal = roundCurrency(clampNumber(value, 0, 1_000_000, 0));
+    setCommissionInputs(prev => ({ ...prev, [saleId]: safeVal }));
   };
 
   const handleApprove = (saleId: string) => {
-    const amount = commissionInputs[saleId] !== undefined ? commissionInputs[saleId] : 1200;
-    if (isNaN(amount) || amount < 0) {
+    if (userRole !== 'gestor') {
+      alert('Operação negada: apenas o Gestor tem permissão para aprovar e fixar comissões.');
+      return;
+    }
+    const rawAmount = commissionInputs[saleId] !== undefined ? commissionInputs[saleId] : 1200;
+    if (isNaN(rawAmount) || !Number.isFinite(rawAmount) || toCents(rawAmount) < 0) {
       alert('Informe um valor de comissão válido.');
       return;
     }
-    onAssignCommission(saleId, amount);
+    const targetSale = sales.find(s => s.id === saleId);
+    if (!targetSale) {
+      alert('Venda não localizada no sistema.');
+      return;
+    }
+    if (toCents(rawAmount) > toCents(targetSale.valorVenda)) {
+      alert('O valor da comissão não pode ultrapassar o valor total negociado da venda.');
+      return;
+    }
+    onAssignCommission(saleId, roundCurrency(rawAmount), targetSale.version);
   };
 
-  const totalPendingVolume = pendingSales.reduce((acc, s) => acc + s.valorVenda, 0);
+  const totalPendingVolume = useMemo(() => sumCurrency(pendingSales.map(s => s.valorVenda)), [pendingSales]);
 
   return (
     <div className="space-y-6 pb-12">
@@ -50,7 +88,7 @@ export const PendingCommissionsView: React.FC<PendingCommissionsViewProps> = ({
       <PageHeader
         breadcrumb="Financeiro • Controle de Comissões"
         title="Comissões Pendentes de Aprovação"
-        subtitle="Vendas registradas pela equipe de corretores/vendedores aguardando fixação manual e deliberação da diretoria."
+        subtitle="Vendas registradas pela equipe de vendedores aguardando fixação manual e deliberação da diretoria."
       />
 
       {/* 2. Mini-KPIs */}
@@ -88,7 +126,7 @@ export const PendingCommissionsView: React.FC<PendingCommissionsViewProps> = ({
       )}
 
       {/* 3. Lista de Vendas Pendentes */}
-      {pendingSales.length === 0 ? (
+      {pagination.totalItems === 0 ? (
         <div className="p-12 text-center bg-[#17171A] border border-[#2D2D32] rounded-[12px]">
           <CheckCircle2 className="w-12 h-12 text-[#22C55E] mx-auto mb-3" />
           <h3 className="text-base font-bold text-[#F5F5F5] font-display">
@@ -100,16 +138,19 @@ export const PendingCommissionsView: React.FC<PendingCommissionsViewProps> = ({
         </div>
       ) : (
         <div className="space-y-4">
-          {pendingSales.map((sale) => {
-            const vehicle = vehicles.find(v => v.id === sale.veiculoId);
+          {pagination.paginatedItems.map((sale) => {
+            const vehicle = vehiclesById.get(sale.veiculoId);
             const preSaleCost = vehicle ? computePreSaleTotalCost(vehicle) : 0;
             const postSaleCosts = computePostSaleCosts(sale);
 
-            // Simulação de lucro da loja com o valor inserido
-            const currentInputValue = commissionInputs[sale.id] !== undefined ? commissionInputs[sale.id] : 1200;
-            const totalCostSimulated = preSaleCost + postSaleCosts + (Number(currentInputValue) || 0);
-            const netProfitSimulated = sale.valorVenda - totalCostSimulated;
-            const marginPercentSimulated = sale.valorVenda > 0 ? ((netProfitSimulated / sale.valorVenda) * 100).toFixed(1) : '0';
+            // Simulação de lucro da loja com o valor inserido (em centavos exatos)
+            const currentInputValue =
+              commissionInputs[sale.id] !== undefined ? commissionInputs[sale.id] : 1200;
+            const safeComm = roundCurrency(Math.max(0, Number(currentInputValue) || 0));
+            const totalCostSimulated = sumCurrency([preSaleCost, postSaleCosts, safeComm]);
+            const netProfitSimulated = fromCents(toCents(sale.valorVenda) - toCents(totalCostSimulated));
+            const marginValueSimulated = computeMarginPercent(sale.valorVenda, totalCostSimulated);
+            const marginPercentSimulated = marginValueSimulated.toFixed(1);
 
             return (
               <div
@@ -144,27 +185,31 @@ export const PendingCommissionsView: React.FC<PendingCommissionsViewProps> = ({
                   </div>
                 </div>
 
-                {/* Costs breakdown and live simulator */}
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-4 rounded-[8px] bg-[#202024] border border-[#2D2D32] text-xs">
-                  <div>
-                    <span className="text-[#A7A7AB] uppercase text-[10px] block">Custo de Pátio / Aquisição</span>
-                    <span className="font-semibold text-[#F5F5F5] font-num">{formatCurrency(preSaleCost)}</span>
+                {/* Costs breakdown and live simulator (Exclusivo Gestor — protege margem confidencial da loja) */}
+                {isGestor && (
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-4 rounded-[8px] bg-[#202024] border border-[#2D2D32] text-xs">
+                    <div>
+                      <span className="text-[#A7A7AB] uppercase text-[10px] block">Custo Total de Aquisição</span>
+                      <span className="font-semibold text-[#F5F5F5] font-num">{formatCurrency(preSaleCost)}</span>
+                    </div>
+                    <div>
+                      <span className="text-[#A7A7AB] uppercase text-[10px] block">Custos Pós-Venda</span>
+                      <span className="font-semibold text-[#CAC9CA] font-num">{formatCurrency(postSaleCosts)}</span>
+                    </div>
+                    <div>
+                      <span className="text-[#A7A7AB] uppercase text-[10px] block">Lucro Líquido Previsto Loja</span>
+                      <span className={`font-bold font-num ${netProfitSimulated >= 0 ? 'text-[#22C55E]' : 'text-[#D4130D]'}`}>
+                        {formatCurrency(netProfitSimulated)}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-[#A7A7AB] uppercase text-[10px] block">Margem Líquida da Loja</span>
+                      <span className={`font-bold font-num ${marginValueSimulated >= 0 ? 'text-[#F5F5F5]' : 'text-[#D4130D]'}`}>
+                        {marginPercentSimulated}%
+                      </span>
+                    </div>
                   </div>
-                  <div>
-                    <span className="text-[#A7A7AB] uppercase text-[10px] block">Custos Pós-Venda</span>
-                    <span className="font-semibold text-[#CAC9CA] font-num">{formatCurrency(postSaleCosts)}</span>
-                  </div>
-                  <div>
-                    <span className="text-[#A7A7AB] uppercase text-[10px] block">Lucro Líquido Previsto Loja</span>
-                    <span className={`font-bold font-num ${netProfitSimulated >= 0 ? 'text-[#22C55E]' : 'text-[#D4130D]'}`}>
-                      {formatCurrency(netProfitSimulated)}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-[#A7A7AB] uppercase text-[10px] block">Margem Líquida da Loja</span>
-                    <span className="font-bold text-[#F5F5F5] font-num">{marginPercentSimulated}%</span>
-                  </div>
-                </div>
+                )}
 
                 {/* Manager action section */}
                 {userRole === 'gestor' ? (
@@ -179,10 +224,11 @@ export const PendingCommissionsView: React.FC<PendingCommissionsViewProps> = ({
                         </span>
                         <input
                           type="number"
-                          step="50"
+                          step="0.01"
                           min="0"
+                          max="1000000"
                           value={currentInputValue}
-                          onChange={(e) => handleInputChange(sale.id, Number(e.target.value))}
+                          onChange={(e) => handleInputChange(sale.id, e.target.value)}
                           className={`${formStyles.input} pl-9 font-num font-bold text-sm text-[#F5F5F5]`}
                         />
                       </div>
@@ -206,6 +252,22 @@ export const PendingCommissionsView: React.FC<PendingCommissionsViewProps> = ({
             );
           })}
         </div>
+      )}
+
+      {/* Paginação de Comissões Pendentes */}
+      {pagination.totalItems > 0 && (
+        <PaginationControls
+          currentPage={pagination.currentPage}
+          totalPages={pagination.totalPages}
+          totalItems={pagination.totalItems}
+          pageSize={pagination.pageSize}
+          onPageChange={pagination.goToPage}
+          onPageSizeChange={pagination.changePageSize}
+          pageSizeOptions={[5, 10, 20]}
+          isCached={pagination.isCurrentPageCached}
+          isLoading={pagination.isLoading}
+          itemLabel="comissões pendentes"
+        />
       )}
 
     </div>

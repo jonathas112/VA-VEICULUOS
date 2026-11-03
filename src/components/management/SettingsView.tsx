@@ -1,19 +1,27 @@
 import React, { useState, useMemo } from 'react';
 import { 
-  Building, Landmark, FileText, Users, Check, AlertCircle, 
-  Upload, Image as ImageIcon, Eye, Printer, RotateCcw, 
-  Cloud, RefreshCw, Database, Sparkles, MapPin, Phone,
-  Trash2, Power, PowerOff, Edit3, Search, X, CheckCircle2,
-  AlertTriangle, Shield, Award, UserCheck
+  Landmark, Users, Check, 
+  Upload, Eye, Printer, RotateCcw, 
+  RefreshCw, Database, MapPin,
+  Trash2, Power, PowerOff, Edit3, Search, X,
+  AlertTriangle
 } from 'lucide-react';
-import { StoreProfile, Financier, ContractTemplate, Salesperson, LetterheadConfig } from '../../types';
+import { StoreProfile, Financier, ContractTemplate, Salesperson } from '../../types';
 import { PageHeader, UnderlineTabs } from '../common/DesignSystem';
 import { BrandLogo } from '../common/BrandLogo';
 import { compressImageFile } from '../../utils/imageCompressor';
-import { maskCPF, maskCNPJ, maskPhone, maskCEP } from '../../utils/formatters';
-import { AVAILABLE_MERGE_TAGS, renderTemplate } from '../../utils/templateEngine';
+import {
+  maskCNPJ, maskPhone, maskCEP, maskUF,
+  isValidCNPJ, isValidPhone, isValidCEP, isValidUF, isValidEmail,
+  clampNumber
+} from '../../utils/formatters';
+import { AVAILABLE_MERGE_TAGS, renderTemplate, findUnknownTemplateTags } from '../../utils/templateEngine';
 import { DEFAULT_TEMPLATES } from '../../data/defaultTemplates';
 import { storageService } from '../../services/storage';
+import { printA4Document } from '../../utils/printDocument';
+import { LetterheadA4Sheet } from '../common/LetterheadA4Sheet';
+import { PaginationControls } from '../common/PaginationControls';
+import { usePaginatedList } from '../../hooks/usePaginatedList';
 
 interface SettingsViewProps {
   store: StoreProfile;
@@ -81,13 +89,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
   // Formulário de Papel Timbrado e Contratos
   const [selectedTemplate, setSelectedTemplate] = useState<ContractTemplate>(templates[0] || DEFAULT_TEMPLATES[0]);
-  const [templateSavedNotice, setTemplateSavedNotice] = useState(false);
-  const [showPrintPreview, setShowPrintPreview] = useState(false);
 
   // Formulário de Novas Financeiras
   const [newFinNome, setNewFinNome] = useState('');
   const [newFinTaxa, setNewFinTaxa] = useState<number>(1.49);
-  const [newFinTelefone, setNewFinTelefone] = useState('(83) 9');
+  const [newFinTelefone, setNewFinTelefone] = useState('');
   const [newFinContato, setNewFinContato] = useState('');
   const [financierFilter, setFinancierFilter] = useState<'todas' | 'ativas' | 'desativadas'>('todas');
   const [financierSearch, setFinancierSearch] = useState('');
@@ -97,7 +103,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   // Formulário de Novos Vendedores / Membros da Equipe
   const [newSellerNome, setNewSellerNome] = useState('');
   const [newSellerEmail, setNewSellerEmail] = useState('');
-  const [newSellerTelefone, setNewSellerTelefone] = useState('(83) 9');
+  const [newSellerTelefone, setNewSellerTelefone] = useState('');
   const [newSellerMeta, setNewSellerMeta] = useState<number>(5);
   const [salespersonFilter, setSalespersonFilter] = useState<'todos' | 'ativos' | 'desativados'>('todos');
   const [salespersonSearch, setSalespersonSearch] = useState('');
@@ -111,7 +117,40 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   // Handlers da Loja
   const handleSaveStoreSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onSaveStore(storeForm);
+    if (!storeForm.nomeFantasia.trim() || !storeForm.razaoSocial.trim() || !storeForm.endereco.trim() || !storeForm.cidade.trim()) {
+      alert('Por favor, preencha Nome Fantasia, Razão Social, Logradouro e Cidade da loja.');
+      return;
+    }
+    if (!isValidCNPJ(storeForm.cnpj)) {
+      alert('Por favor, informe um CNPJ válido com 14 dígitos.');
+      return;
+    }
+    if (!storeForm.whatsapp.trim() || !isValidPhone(storeForm.whatsapp)) {
+      alert('Por favor, informe um WhatsApp oficial válido com DDD (10 ou 11 dígitos).');
+      return;
+    }
+    if (storeForm.telefone.trim() && !isValidPhone(storeForm.telefone)) {
+      alert('Por favor, informe um Telefone fixo válido com DDD (10 ou 11 dígitos).');
+      return;
+    }
+    if (storeForm.cep.trim() && !isValidCEP(storeForm.cep)) {
+      alert('Por favor, informe um CEP válido com 8 dígitos.');
+      return;
+    }
+    if (!storeForm.estado.trim() || !isValidUF(storeForm.estado)) {
+      alert('Por favor, informe uma UF (Estado) válida de 2 letras (ex: PB, PE, RN, SP).');
+      return;
+    }
+    onSaveStore({
+      ...storeForm,
+      nomeFantasia: storeForm.nomeFantasia.trim(),
+      razaoSocial: storeForm.razaoSocial.trim(),
+      endereco: storeForm.endereco.trim(),
+      cidade: storeForm.cidade.trim(),
+      estado: maskUF(storeForm.estado),
+      chavePix: storeForm.chavePix.trim(),
+      site: storeForm.site.trim()
+    });
     setStoreSavedNotice(true);
     setTimeout(() => setStoreSavedNotice(false), 3000);
   };
@@ -177,9 +216,15 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
   // Handlers de Modelos de Contratos
   const handleSaveTemplate = () => {
-    onSaveTemplate(selectedTemplate);
-    setTemplateSavedNotice(true);
-    setTimeout(() => setTemplateSavedNotice(false), 3000);
+    if (!selectedTemplate.titulo.trim() || !selectedTemplate.conteudo.trim()) {
+      alert('Informe o título oficial e o corpo do texto antes de salvar o modelo de documento.');
+      return;
+    }
+    onSaveTemplate({
+      ...selectedTemplate,
+      titulo: selectedTemplate.titulo.trim(),
+      conteudo: selectedTemplate.conteudo.trim()
+    });
   };
 
   const handleResetTemplate = () => {
@@ -202,21 +247,32 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   // Handlers de Financeiras
   const handleAddFinancierSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newFinNome) return;
+    if (!newFinNome.trim()) {
+      alert('Informe o nome da instituição financeira.');
+      return;
+    }
+    if (isNaN(newFinTaxa) || !Number.isFinite(newFinTaxa) || newFinTaxa < 0.01 || newFinTaxa > 50) {
+      alert('Por favor, informe uma taxa média de juros válida (entre 0.01% e 50.0% a.m.).');
+      return;
+    }
+    if (newFinTelefone.trim() && !isValidPhone(newFinTelefone)) {
+      alert('Por favor, informe um telefone válido com DDD (10 ou 11 dígitos) para a financeira.');
+      return;
+    }
     const fin: Financier = {
       id: 'fin_' + Date.now(),
-      nome: newFinNome,
+      nome: newFinNome.trim(),
       taxaMedia: Number(newFinTaxa),
-      telefone: maskPhone(newFinTelefone),
-      contato: newFinContato || undefined,
-      contatoGerente: newFinContato || undefined,
+      telefone: newFinTelefone.trim() ? maskPhone(newFinTelefone) : '',
+      contato: newFinContato.trim() ? newFinContato.trim() : undefined,
+      contatoGerente: newFinContato.trim() ? newFinContato.trim() : undefined,
       ativa: true,
       ativo: true
     };
     onAddFinancier(fin);
     setNewFinNome('');
     setNewFinTaxa(1.49);
-    setNewFinTelefone('(83) 9');
+    setNewFinTelefone('');
     setNewFinContato('');
   };
 
@@ -240,10 +296,31 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const handleSaveEditFinancierSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingFinancier) return;
+    if (!editingFinancier.nome.trim()) {
+      alert('Informe o nome da instituição financeira.');
+      return;
+    }
+    const taxa = Number(editingFinancier.taxaMedia);
+    if (isNaN(taxa) || !Number.isFinite(taxa) || taxa < 0.01 || taxa > 50) {
+      alert('Por favor, informe uma taxa média de juros válida (entre 0.01% e 50.0% a.m.).');
+      return;
+    }
+    if (editingFinancier.telefone && editingFinancier.telefone.trim() && !isValidPhone(editingFinancier.telefone)) {
+      alert('Por favor, informe um telefone válido com DDD (10 ou 11 dígitos) para a financeira.');
+      return;
+    }
+    const sanitizedFinancier: Financier = {
+      ...editingFinancier,
+      nome: editingFinancier.nome.trim(),
+      taxaMedia: taxa,
+      telefone: editingFinancier.telefone?.trim() ? maskPhone(editingFinancier.telefone) : '',
+      contato: editingFinancier.contato?.trim() || undefined,
+      contatoGerente: editingFinancier.contatoGerente?.trim() || editingFinancier.contato?.trim() || undefined
+    };
     if (onUpdateFinancier) {
-      onUpdateFinancier(editingFinancier);
+      onUpdateFinancier(sanitizedFinancier);
     } else {
-      storageService.saveFinancier(editingFinancier);
+      storageService.saveFinancier(sanitizedFinancier);
     }
     setEditingFinancier(null);
   };
@@ -251,20 +328,36 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   // Handlers de Vendedores / Membros da Equipe
   const handleAddSellerSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newSellerNome) return;
+    if (!newSellerNome.trim()) {
+      alert('Informe o nome completo do consultor de vendas.');
+      return;
+    }
+    if (newSellerEmail.trim() && !isValidEmail(newSellerEmail)) {
+      alert('Informe um endereço de e-mail válido para o vendedor.');
+      return;
+    }
+    if (newSellerTelefone.trim() && !isValidPhone(newSellerTelefone)) {
+      alert('Por favor, informe um WhatsApp válido com DDD (10 ou 11 dígitos) para o vendedor.');
+      return;
+    }
+    if (isNaN(newSellerMeta) || !Number.isFinite(newSellerMeta) || newSellerMeta < 1 || newSellerMeta > 100) {
+      alert('Informe uma meta mensal válida entre 1 e 100 veículos.');
+      return;
+    }
+    const cleanGeneratedSlug = newSellerNome.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '') || 'consultor';
     const seller: Salesperson = {
       id: 'vend_' + Date.now(),
-      nome: newSellerNome,
-      email: newSellerEmail || `${newSellerNome.toLowerCase().replace(/\s+/g, '')}@vaveiculos.com.br`,
-      telefone: maskPhone(newSellerTelefone),
-      metaMensal: Number(newSellerMeta) || 5,
+      nome: newSellerNome.trim(),
+      email: newSellerEmail.trim().toLowerCase() || `${cleanGeneratedSlug}@vaveiculos.com.br`,
+      telefone: newSellerTelefone.trim() ? maskPhone(newSellerTelefone) : '',
+      metaMensal: Math.round(Number(newSellerMeta)) || 5,
       ativo: true,
       dataContratacao: new Date().toISOString()
     };
     onAddSalesperson(seller);
     setNewSellerNome('');
     setNewSellerEmail('');
-    setNewSellerTelefone('(83) 9');
+    setNewSellerTelefone('');
     setNewSellerMeta(5);
   };
 
@@ -288,10 +381,34 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const handleSaveEditSalespersonSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingSalesperson) return;
+    if (!editingSalesperson.nome.trim()) {
+      alert('Informe o nome completo do consultor de vendas.');
+      return;
+    }
+    if (!editingSalesperson.email.trim() || !isValidEmail(editingSalesperson.email)) {
+      alert('Informe um endereço de e-mail válido para o vendedor.');
+      return;
+    }
+    if (editingSalesperson.telefone && editingSalesperson.telefone.trim() && !isValidPhone(editingSalesperson.telefone)) {
+      alert('Por favor, informe um WhatsApp válido com DDD (10 ou 11 dígitos) para o vendedor.');
+      return;
+    }
+    const meta = Number(editingSalesperson.metaMensal);
+    if (isNaN(meta) || !Number.isFinite(meta) || meta < 1 || meta > 100) {
+      alert('Informe uma meta mensal válida entre 1 e 100 veículos.');
+      return;
+    }
+    const sanitizedSeller: Salesperson = {
+      ...editingSalesperson,
+      nome: editingSalesperson.nome.trim(),
+      email: editingSalesperson.email.trim().toLowerCase(),
+      telefone: editingSalesperson.telefone?.trim() ? maskPhone(editingSalesperson.telefone) : '',
+      metaMensal: Math.round(meta)
+    };
     if (onUpdateSalesperson) {
-      onUpdateSalesperson(editingSalesperson);
+      onUpdateSalesperson(sanitizedSeller);
     } else {
-      storageService.saveSalesperson(editingSalesperson);
+      storageService.saveSalesperson(sanitizedSeller);
     }
     setEditingSalesperson(null);
   };
@@ -338,6 +455,19 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     return salespeople.filter(s => s.ativo !== false).length;
   }, [salespeople]);
 
+  // Paginação sob demanda com cache
+  const paginatedFinanciers = usePaginatedList<Financier>({
+    items: filteredFinanciers,
+    initialPageSize: 5,
+    dependencies: [financierSearch, financierFilter, filteredFinanciers.length]
+  });
+
+  const paginatedSalespeople = usePaginatedList<Salesperson>({
+    items: filteredSalespeople,
+    initialPageSize: 5,
+    dependencies: [salespersonSearch, salespersonFilter, filteredSalespeople.length]
+  });
+
   const handleSyncFirebase = async () => {
     try {
       setIsSyncing(true);
@@ -352,8 +482,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   };
 
   const tabs = [
-    { id: 'store', label: 'Perfil da Loja & Logotipo', count: undefined },
-    { id: 'letterhead_contracts', label: 'Editor de Papel Timbrado & Contratos', count: templates.length },
+    { id: 'store', label: 'Perfil da Loja', count: undefined },
+    { id: 'letterhead_contracts', label: 'Papel Timbrado & Contratos', count: templates.length },
     { id: 'financiers', label: 'Financeiras & Bancos', count: financiers.length },
     { id: 'salespeople', label: 'Equipe de Vendedores', count: salespeople.length },
     { id: 'firebase', label: 'Banco de Dados Firebase', count: undefined }
@@ -398,7 +528,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       id: 'mock_owner',
       nome: 'Carlos Eduardo Oliveira',
       cpf: '345.678.901-23',
-      rg: '2.345.678 SSP/PB',
+      rg: '2.345.678 SSP-PB',
       telefone: '(83) 99876-5432',
       endereco: 'Rua São José, 45',
       cidade: 'Areial',
@@ -410,16 +540,16 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       dataVenda: '2026-10-13',
       clienteNome: 'Mariana Guimarães Santos',
       clienteCpf: '987.654.321-00',
-      clienteRg: '4.567.890 SSP/PB',
+      clienteRg: '4.567.890 SSP-PB',
       clienteTelefone: '(83) 99123-4567',
-      clienteEndereco: 'Av. Epitácio Pessoa, 1200 - Areial/PB',
+      clienteEndereco: 'Av. Epitácio Pessoa, 1200 - Areial - PB',
       vendedorId: 'vend_carlos',
       vendedorNome: 'Carlos Ramos',
       valorVenda: 104000,
       formaPagamento: 'a_vista_pix' as const,
-      tipoContratoId: 'garantia_padrao',
-      tipoContratoNome: 'Contrato de Compra e Venda',
-      isRepasseSemGarantia: false,
+      tipoContratoId: selectedTemplate.id || 'contrato_garantia_padrao',
+      tipoContratoNome: selectedTemplate.titulo || 'Contrato de Compra e Venda',
+      isRepasseSemGarantia: selectedTemplate.tipo === 'repasse',
       comissaoValor: 1040,
       comissaoPendente: false,
       custosPosVenda: []
@@ -427,6 +557,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   };
 
   const renderedPreviewText = renderTemplate(selectedTemplate.conteudo, previewSample);
+  const unknownSelectedTags = useMemo(
+    () => findUnknownTemplateTags(selectedTemplate.conteudo || ''),
+    [selectedTemplate.conteudo]
+  );
 
   return (
     <div className="space-y-6 pb-12">
@@ -447,7 +581,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
       {/* ABA 1: Perfil da Loja & Logotipo */}
       {activeTab === 'store' && (
-        <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 max-w-4xl space-y-6">
+        <div className="bg-[#17171A] border border-[#2D2D32] rounded-[14px] p-6 w-full space-y-6">
           <div className="flex items-center justify-between pb-4 border-b border-neutral-800">
             <div>
               <h3 className="text-base font-bold text-white font-display">
@@ -516,6 +650,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <input
                   type="text"
                   required
+                  maxLength={100}
                   value={storeForm.nomeFantasia}
                   onChange={(e) => setStoreForm({ ...storeForm, nomeFantasia: e.target.value })}
                   className={formStyles.input}
@@ -527,6 +662,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <input
                   type="text"
                   required
+                  maxLength={140}
                   value={storeForm.razaoSocial}
                   onChange={(e) => setStoreForm({ ...storeForm, razaoSocial: e.target.value })}
                   className={formStyles.input}
@@ -538,6 +674,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <input
                   type="text"
                   required
+                  maxLength={18}
                   value={storeForm.cnpj}
                   onChange={(e) => setStoreForm({ ...storeForm, cnpj: maskCNPJ(e.target.value) })}
                   className={`${formStyles.input} font-mono`}
@@ -548,6 +685,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <label className={formStyles.label}>Telefone Fixo da Loja</label>
                 <input
                   type="text"
+                  maxLength={15}
                   value={storeForm.telefone}
                   onChange={(e) => setStoreForm({ ...storeForm, telefone: maskPhone(e.target.value) })}
                   className={`${formStyles.input} font-mono`}
@@ -559,6 +697,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <input
                   type="text"
                   required
+                  maxLength={15}
                   value={storeForm.whatsapp}
                   onChange={(e) => setStoreForm({ ...storeForm, whatsapp: maskPhone(e.target.value) })}
                   className={`${formStyles.input} font-mono`}
@@ -569,6 +708,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <label className={formStyles.label}>Chave Pix para Recebimentos</label>
                 <input
                   type="text"
+                  maxLength={120}
                   value={storeForm.chavePix}
                   onChange={(e) => setStoreForm({ ...storeForm, chavePix: e.target.value })}
                   className={formStyles.input}
@@ -585,9 +725,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="sm:col-span-2">
-                  <label className={formStyles.label}>Logradouro & Número</label>
+                  <label className={formStyles.label}>Logradouro & Número *</label>
                   <input
                     type="text"
+                    required
+                    maxLength={200}
                     value={storeForm.endereco}
                     onChange={(e) => setStoreForm({ ...storeForm, endereco: e.target.value })}
                     className={formStyles.input}
@@ -598,6 +740,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   <label className={formStyles.label}>CEP</label>
                   <input
                     type="text"
+                    maxLength={9}
                     value={storeForm.cep}
                     onChange={(e) => setStoreForm({ ...storeForm, cep: maskCEP(e.target.value) })}
                     className={`${formStyles.input} font-mono`}
@@ -605,9 +748,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 </div>
 
                 <div>
-                  <label className={formStyles.label}>Cidade</label>
+                  <label className={formStyles.label}>Cidade *</label>
                   <input
                     type="text"
+                    required
+                    maxLength={80}
                     value={storeForm.cidade}
                     onChange={(e) => setStoreForm({ ...storeForm, cidade: e.target.value })}
                     className={formStyles.input}
@@ -615,12 +760,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 </div>
 
                 <div>
-                  <label className={formStyles.label}>Estado (UF)</label>
+                  <label className={formStyles.label}>Estado (UF) *</label>
                   <input
                     type="text"
+                    required
                     maxLength={2}
                     value={storeForm.estado}
-                    onChange={(e) => setStoreForm({ ...storeForm, estado: e.target.value.toUpperCase() })}
+                    onChange={(e) => setStoreForm({ ...storeForm, estado: maskUF(e.target.value) })}
                     className={`${formStyles.input} font-mono uppercase`}
                   />
                 </div>
@@ -629,6 +775,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   <label className={formStyles.label}>Site Institucional</label>
                   <input
                     type="text"
+                    maxLength={120}
                     value={storeForm.site}
                     onChange={(e) => setStoreForm({ ...storeForm, site: e.target.value })}
                     className={formStyles.input}
@@ -733,7 +880,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                           mostrarTelefones: true,
                           mostrarLinhasAssinatura: true
                         }),
-                        logoHeightPx: Number(e.target.value)
+                        logoHeightPx: Math.round(clampNumber(e.target.value, 30, 120, 64))
                       }
                     };
                     setStoreForm(updated);
@@ -768,7 +915,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                           mostrarTelefones: true,
                           mostrarLinhasAssinatura: true
                         }),
-                        fontSizePt: Number(e.target.value)
+                        fontSizePt: clampNumber(e.target.value, 8, 14, 10)
                       }
                     };
                     setStoreForm(updated);
@@ -803,7 +950,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                           mostrarTelefones: true,
                           mostrarLinhasAssinatura: true
                         }),
-                        marginTopMm: Number(e.target.value)
+                        marginTopMm: Math.round(clampNumber(e.target.value, 5, 40, 15))
                       }
                     };
                     setStoreForm(updated);
@@ -930,6 +1077,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <label className={formStyles.label}>Título Oficial do Documento</label>
                 <input
                   type="text"
+                  maxLength={140}
                   value={selectedTemplate.titulo}
                   onChange={(e) => setSelectedTemplate({ ...selectedTemplate, titulo: e.target.value })}
                   className={formStyles.input}
@@ -959,11 +1107,25 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 </div>
               </div>
 
+              {unknownSelectedTags.length > 0 && (
+                <div className="p-3 rounded-xl bg-amber-950/40 border border-amber-800/60 text-xs text-amber-200 flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                  <div>
+                    <strong>Tag(s) não reconhecida(s):</strong>{' '}
+                    <span className="font-mono text-amber-300">{unknownSelectedTags.join(', ')}</span>.
+                    <p className="text-[11px] text-amber-300/80 mt-0.5">
+                      Tags não catalogadas são substituídas automaticamente por linha de preenchimento para nunca deixar códigos crus na folha A4.
+                    </p>
+                  </div>
+                </div>
+              )}
+
               {/* Editor de Conteúdo */}
               <div>
                 <label className={formStyles.label}>Corpo do Texto & Cláusulas</label>
                 <textarea
                   rows={14}
+                  maxLength={40000}
                   value={selectedTemplate.conteudo}
                   onChange={(e) => setSelectedTemplate({ ...selectedTemplate, conteudo: e.target.value })}
                   className={`${formStyles.textarea} font-mono text-xs leading-relaxed`}
@@ -1007,87 +1169,29 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   </span>
                 </div>
 
-                {/* Folha A4 Virtual */}
-                <div 
-                  className="bg-white text-neutral-900 rounded-lg shadow-2xl p-6 overflow-y-auto max-h-[580px] text-left border border-neutral-300"
-                  style={{
-                    fontFamily: storeForm.papelTimbrado?.fontFamily || 'Inter, sans-serif',
-                    fontSize: `${storeForm.papelTimbrado?.fontSizePt || 10}pt`
-                  }}
-                >
-                  {/* Cabeçalho Timbrado */}
-                  <div className={`border-b-2 border-neutral-800 pb-3 mb-4 text-${storeForm.papelTimbrado?.headerAlignment || 'center'}`}>
-                    {storeForm.logoUrl ? (
-                      <div className={`flex justify-${storeForm.papelTimbrado?.headerAlignment === 'left' ? 'start' : storeForm.papelTimbrado?.headerAlignment === 'right' ? 'end' : 'center'} mb-2`}>
-                        <img 
-                          src={storeForm.logoUrl} 
-                          alt="Logo" 
-                          style={{ height: `${storeForm.papelTimbrado?.logoHeightPx || 55}px` }}
-                          className="object-contain"
-                        />
-                      </div>
-                    ) : (
-                      <h2 className="text-base font-black tracking-wider text-neutral-950 uppercase font-display">
-                        {storeForm.nomeFantasia || 'VA VEÍCULOS'}
-                      </h2>
-                    )}
-
-                    <div className="text-[9px] text-neutral-600 leading-tight space-y-0.5">
-                      <p className="font-semibold">{storeForm.razaoSocial}</p>
-                      {storeForm.papelTimbrado?.mostrarCnpj && (
-                        <p>CNPJ: {storeForm.cnpj}</p>
-                      )}
-                      {storeForm.papelTimbrado?.mostrarEndereco && (
-                        <p>{storeForm.endereco}, {storeForm.cidade} - {storeForm.estado} · CEP: {storeForm.cep}</p>
-                      )}
-                      {storeForm.papelTimbrado?.mostrarTelefones && (
-                        <p>Telefone: {storeForm.telefone} · WhatsApp: {storeForm.whatsapp}</p>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Título do Documento */}
-                  <div className="text-center mb-4">
-                    <h3 className="font-extrabold text-xs uppercase tracking-wide border-b border-neutral-300 pb-1 inline-block">
-                      {selectedTemplate.titulo}
-                    </h3>
-                  </div>
-
-                  {/* Corpo do Texto Renderizado */}
-                  <div className="text-[9.5px] leading-relaxed whitespace-pre-wrap text-justify text-neutral-800">
-                    {renderedPreviewText}
-                  </div>
-
-                  {/* Linhas de Assinatura */}
-                  {storeForm.papelTimbrado?.mostrarLinhasAssinatura && (
-                    <div className="mt-8 pt-4 border-t border-neutral-300 grid grid-cols-2 gap-4 text-center text-[9px] text-neutral-700">
-                      <div>
-                        <div className="border-t border-neutral-400 pt-1 mt-6 font-semibold">
-                          {storeForm.nomeFantasia}
-                        </div>
-                        <p className="text-[8px] text-neutral-500">Representante Legal</p>
-                      </div>
-                      <div>
-                        <div className="border-t border-neutral-400 pt-1 mt-6 font-semibold">
-                          Cliente / Adquirente
-                        </div>
-                        <p className="text-[8px] text-neutral-500">CPF: 000.000.000-00</p>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Rodapé Timbrado */}
-                  <div className="mt-6 pt-2 border-t border-neutral-200 text-center text-[7.5px] text-neutral-500">
-                    {storeForm.papelTimbrado?.textoRodape || `${storeForm.nomeFantasia} · ${storeForm.cidade} - ${storeForm.estado}`}
-                  </div>
-                </div>
+                {/* Folha A4 Virtual Unificada (sem duplicidade de assinaturas) */}
+                <LetterheadA4Sheet
+                  id="letterhead-test-sheet"
+                  store={storeForm}
+                  documentTitle={selectedTemplate.titulo}
+                  renderedContent={renderedPreviewText}
+                  sale={previewSample.sale}
+                  owner={previewSample.owner}
+                  compactPreview={true}
+                />
               </div>
 
               {/* Botão de Teste de Impressão */}
               <div className="mt-4 pt-3 border-t border-neutral-800 flex justify-end">
                 <button
                   type="button"
-                  onClick={() => window.print()}
+                  onClick={() =>
+                    printA4Document({
+                      title: 'Folha A4 Timbrada de Teste - VA Veículos',
+                      elementId: 'letterhead-test-sheet',
+                      paperConfig: storeForm.papelTimbrado
+                    })
+                  }
                   className="px-4 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-white font-semibold text-xs flex items-center gap-1.5 cursor-pointer transition-colors"
                 >
                   <Printer className="w-3.5 h-3.5 text-amber-500" />
@@ -1104,14 +1208,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
       {/* ABA 3: Financeiras & Bancos */}
       {activeTab === 'financiers' && (
-        <div className="space-y-6 max-w-4xl">
+        <div className="space-y-6 w-full">
           {/* Formulário de Credenciamento */}
           <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 space-y-4">
             <div className="flex items-center justify-between pb-2 border-b border-neutral-800">
               <div className="flex items-center gap-2">
                 <Landmark className="w-4 h-4 text-amber-500" />
                 <h3 className="text-sm font-bold text-white font-display uppercase tracking-wider">
-                  Credenciar Nova Instituição Financeira / Banco Parceiro
+                  Credenciar Nova Financeira Parceira
                 </h3>
               </div>
               <span className="text-[11px] text-neutral-400">
@@ -1121,10 +1225,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
             <form onSubmit={handleAddFinancierSubmit} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <div>
-                <label className={formStyles.label}>Nome do Banco / Financeira *</label>
+                <label className={formStyles.label}>Nome da Financeira *</label>
                 <input
                   type="text"
                   required
+                  maxLength={100}
                   value={newFinNome}
                   onChange={(e) => setNewFinNome(e.target.value)}
                   placeholder="Ex: Santander Financiamentos"
@@ -1137,9 +1242,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <input
                   type="number"
                   step="0.01"
+                  min="0.01"
+                  max="50"
                   required
                   value={newFinTaxa}
-                  onChange={(e) => setNewFinTaxa(Number(e.target.value))}
+                  onChange={(e) => setNewFinTaxa(clampNumber(e.target.value, 0, 50, 0))}
                   className={formStyles.input}
                 />
               </div>
@@ -1148,6 +1255,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <label className={formStyles.label}>Telefone da Mesa</label>
                 <input
                   type="text"
+                  maxLength={15}
                   value={newFinTelefone}
                   onChange={(e) => setNewFinTelefone(maskPhone(e.target.value))}
                   placeholder="(83) 99876-5432"
@@ -1156,12 +1264,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               </div>
 
               <div>
-                <label className={formStyles.label}>Contato / Gerente</label>
+                <label className={formStyles.label}>Gerente de Contas</label>
                 <input
                   type="text"
+                  maxLength={100}
                   value={newFinContato}
                   onChange={(e) => setNewFinContato(e.target.value)}
-                  placeholder="Ex: Mesa de Crédito / Patrícia"
+                  placeholder="Ex: Mesa de Crédito - Patrícia"
                   className={formStyles.input}
                 />
               </div>
@@ -1172,7 +1281,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   className="px-6 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-neutral-950 text-xs font-bold transition-colors cursor-pointer flex items-center gap-2 shadow-lg shadow-amber-500/10"
                 >
                   <Landmark className="w-4 h-4" />
-                  Credenciar Banco / Financeira
+                  Credenciar Financeira
                 </button>
               </div>
             </form>
@@ -1225,6 +1334,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <Search className="w-3.5 h-3.5 text-neutral-500 absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
+                  maxLength={100}
                   value={financierSearch}
                   onChange={(e) => setFinancierSearch(e.target.value)}
                   placeholder="Filtrar por nome ou fone..."
@@ -1234,98 +1344,117 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </div>
 
             {/* Listagem */}
-            {filteredFinanciers.length === 0 ? (
+            {paginatedFinanciers.totalItems === 0 ? (
               <div className="p-8 text-center text-neutral-500 text-xs">
                 Nenhuma instituição financeira encontrada com os filtros selecionados.
               </div>
             ) : (
-              <div className="divide-y divide-neutral-800">
-                {filteredFinanciers.map((f) => {
-                  const isAtiva = f.ativa !== false && f.ativo !== false;
-                  return (
-                    <div 
-                      key={f.id} 
-                      className={`p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-colors ${
-                        isAtiva ? 'hover:bg-neutral-800/40' : 'bg-neutral-950/40 opacity-70 hover:opacity-100'
-                      }`}
-                    >
-                      <div className="flex items-start gap-3">
-                        <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 border ${
-                          isAtiva 
-                            ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' 
-                            : 'bg-neutral-800 text-neutral-500 border-neutral-700'
-                        }`}>
-                          <Landmark className="w-4 h-4" />
+              <div>
+                <div className="divide-y divide-neutral-800">
+                  {paginatedFinanciers.paginatedItems.map((f) => {
+                    const isAtiva = f.ativa !== false && f.ativo !== false;
+                    return (
+                      <div 
+                        key={f.id} 
+                        className={`p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-colors ${
+                          isAtiva ? 'hover:bg-neutral-800/40' : 'bg-neutral-950/40 opacity-70 hover:opacity-100'
+                        }`}
+                      >
+                        <div className="flex items-start gap-3">
+                          <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 border ${
+                            isAtiva 
+                              ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' 
+                              : 'bg-neutral-800 text-neutral-500 border-neutral-700'
+                          }`}>
+                            <Landmark className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-bold text-sm text-white">{f.nome}</span>
+                              {isAtiva ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                                  Ativa
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-red-500/10 text-red-400 border border-red-500/20">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
+                                  Desativada
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-xs text-neutral-400 mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5">
+                              <span>Mesa: <strong className="text-neutral-300">{f.contato || f.contatoGerente || 'Geral'}</strong></span>
+                              {f.telefone && <span>• Tel: <strong className="text-neutral-300">{f.telefone}</strong></span>}
+                              <span>• Taxa Média: <strong className="text-emerald-400 font-num">{f.taxaMedia || 1.49}% a.m.</strong></span>
+                            </div>
+                          </div>
                         </div>
-                        <div>
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-bold text-sm text-white">{f.nome}</span>
+
+                        {/* Botões de Ação: Alternar Status, Editar e Apagar */}
+                        <div className="flex items-center gap-2 self-end sm:self-center">
+                          <button
+                            type="button"
+                            onClick={() => handleToggleFinancierClick(f.id)}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer border ${
+                              isAtiva
+                                ? 'bg-neutral-800 hover:bg-amber-900/40 text-amber-300 hover:text-amber-200 border-neutral-700 hover:border-amber-700/50'
+                                : 'bg-emerald-950/40 hover:bg-emerald-900/60 text-emerald-300 border-emerald-800/50'
+                            }`}
+                            title={isAtiva ? 'Desativar financeira' : 'Ativar financeira'}
+                          >
                             {isAtiva ? (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                                Ativa
-                              </span>
+                              <>
+                                <PowerOff className="w-3.5 h-3.5" />
+                                <span>Desativar</span>
+                              </>
                             ) : (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-red-500/10 text-red-400 border border-red-500/20">
-                                <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
-                                Desativada
-                              </span>
+                              <>
+                                <Power className="w-3.5 h-3.5" />
+                                <span>Ativar</span>
+                              </>
                             )}
-                          </div>
-                          <div className="text-xs text-neutral-400 mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5">
-                            <span>Mesa: <strong className="text-neutral-300">{f.contato || f.contatoGerente || 'Geral'}</strong></span>
-                            {f.telefone && <span>• Tel: <strong className="text-neutral-300">{f.telefone}</strong></span>}
-                            <span>• Taxa Média: <strong className="text-emerald-400 font-num">{f.taxaMedia || 1.49}% a.m.</strong></span>
-                          </div>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setEditingFinancier(f)}
+                            className="p-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white border border-neutral-700 transition-colors cursor-pointer"
+                            title="Editar informações da financeira"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setDeleteFinancierConfirm(f)}
+                            className="p-1.5 rounded-lg bg-neutral-800 hover:bg-red-950/60 text-neutral-400 hover:text-red-400 border border-neutral-700 hover:border-red-800/60 transition-colors cursor-pointer"
+                            title="Apagar instituição financeira"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         </div>
                       </div>
+                    );
+                  })}
+                </div>
 
-                      {/* Botões de Ação: Ativar/Desativar, Editar e Apagar */}
-                      <div className="flex items-center gap-2 self-end sm:self-center">
-                        <button
-                          type="button"
-                          onClick={() => handleToggleFinancierClick(f.id)}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer border ${
-                            isAtiva
-                              ? 'bg-neutral-800 hover:bg-amber-900/40 text-amber-300 hover:text-amber-200 border-neutral-700 hover:border-amber-700/50'
-                              : 'bg-emerald-950/40 hover:bg-emerald-900/60 text-emerald-300 border-emerald-800/50'
-                          }`}
-                          title={isAtiva ? 'Desativar financeira' : 'Ativar financeira'}
-                        >
-                          {isAtiva ? (
-                            <>
-                              <PowerOff className="w-3.5 h-3.5" />
-                              <span>Desativar</span>
-                            </>
-                          ) : (
-                            <>
-                              <Power className="w-3.5 h-3.5" />
-                              <span>Ativar</span>
-                            </>
-                          )}
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => setEditingFinancier(f)}
-                          className="p-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white border border-neutral-700 transition-colors cursor-pointer"
-                          title="Editar informações da financeira"
-                        >
-                          <Edit3 className="w-3.5 h-3.5" />
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => setDeleteFinancierConfirm(f)}
-                          className="p-1.5 rounded-lg bg-neutral-800 hover:bg-red-950/60 text-neutral-400 hover:text-red-400 border border-neutral-700 hover:border-red-800/60 transition-colors cursor-pointer"
-                          title="Apagar instituição financeira"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
+                {paginatedFinanciers.totalItems > 0 && (
+                  <div className="p-3 border-t border-neutral-800">
+                    <PaginationControls
+                      currentPage={paginatedFinanciers.currentPage}
+                      totalPages={paginatedFinanciers.totalPages}
+                      totalItems={paginatedFinanciers.totalItems}
+                      pageSize={paginatedFinanciers.pageSize}
+                      onPageChange={paginatedFinanciers.goToPage}
+                      onPageSizeChange={paginatedFinanciers.changePageSize}
+                      pageSizeOptions={[5, 10, 20]}
+                      isCached={paginatedFinanciers.isCurrentPageCached}
+                      isLoading={paginatedFinanciers.isLoading}
+                      itemLabel="financeiras"
+                    />
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -1334,14 +1463,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
       {/* ABA 4: Equipe de Vendedores & Consultores */}
       {activeTab === 'salespeople' && (
-        <div className="space-y-6 max-w-4xl">
+        <div className="space-y-6 w-full">
           {/* Formulário de Cadastro de Vendedor */}
           <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 space-y-4">
             <div className="flex items-center justify-between pb-2 border-b border-neutral-800">
               <div className="flex items-center gap-2">
                 <Users className="w-4 h-4 text-amber-500" />
                 <h3 className="text-sm font-bold text-white font-display uppercase tracking-wider">
-                  Cadastrar Novo Consultor / Vendedor
+                  Cadastrar Novo Vendedor
                 </h3>
               </div>
               <span className="text-[11px] text-neutral-400">
@@ -1355,6 +1484,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <input
                   type="text"
                   required
+                  maxLength={120}
                   value={newSellerNome}
                   onChange={(e) => setNewSellerNome(e.target.value)}
                   placeholder="Ex: Carlos Ramos"
@@ -1366,6 +1496,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <label className={formStyles.label}>E-mail da Loja</label>
                 <input
                   type="email"
+                  maxLength={120}
                   value={newSellerEmail}
                   onChange={(e) => setNewSellerEmail(e.target.value)}
                   placeholder="vendas@vaveiculos.com.br"
@@ -1377,6 +1508,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <label className={formStyles.label}>WhatsApp (DDD 83)</label>
                 <input
                   type="text"
+                  maxLength={15}
                   value={newSellerTelefone}
                   onChange={(e) => setNewSellerTelefone(maskPhone(e.target.value))}
                   placeholder="(83) 98111-2233"
@@ -1389,9 +1521,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <input
                   type="number"
                   min={1}
-                  max={50}
+                  max={100}
                   value={newSellerMeta}
-                  onChange={(e) => setNewSellerMeta(Number(e.target.value))}
+                  onChange={(e) => setNewSellerMeta(Math.trunc(clampNumber(e.target.value, 0, 100, 0)))}
                   placeholder="5"
                   className={formStyles.input}
                 />
@@ -1456,6 +1588,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <Search className="w-3.5 h-3.5 text-neutral-500 absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
+                  maxLength={100}
                   value={salespersonSearch}
                   onChange={(e) => setSalespersonSearch(e.target.value)}
                   placeholder="Filtrar por nome, e-mail ou fone..."
@@ -1465,98 +1598,117 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </div>
 
             {/* Listagem */}
-            {filteredSalespeople.length === 0 ? (
+            {paginatedSalespeople.totalItems === 0 ? (
               <div className="p-8 text-center text-neutral-500 text-xs">
                 Nenhum membro da equipe encontrado com os filtros selecionados.
               </div>
             ) : (
-              <div className="divide-y divide-neutral-800">
-                {filteredSalespeople.map((s) => {
-                  const isAtivo = s.ativo !== false;
-                  return (
-                    <div 
-                      key={s.id} 
-                      className={`p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-colors ${
-                        isAtivo ? 'hover:bg-neutral-800/40' : 'bg-neutral-950/40 opacity-70 hover:opacity-100'
-                      }`}
-                    >
-                      <div className="flex items-start gap-3">
-                        <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 border font-bold text-xs ${
-                          isAtivo 
-                            ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' 
-                            : 'bg-neutral-800 text-neutral-500 border-neutral-700'
-                        }`}>
-                          {s.nome.slice(0, 2).toUpperCase()}
+              <div>
+                <div className="divide-y divide-neutral-800">
+                  {paginatedSalespeople.paginatedItems.map((s) => {
+                    const isAtivo = s.ativo !== false;
+                    return (
+                      <div 
+                        key={s.id} 
+                        className={`p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-colors ${
+                          isAtivo ? 'hover:bg-neutral-800/40' : 'bg-neutral-950/40 opacity-70 hover:opacity-100'
+                        }`}
+                      >
+                        <div className="flex items-start gap-3">
+                          <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 border font-bold text-xs ${
+                            isAtivo 
+                              ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' 
+                              : 'bg-neutral-800 text-neutral-500 border-neutral-700'
+                          }`}>
+                            {s.nome.slice(0, 2).toUpperCase()}
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-bold text-sm text-white">{s.nome}</span>
+                              {isAtivo ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                                  Ativo na Loja
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-red-500/10 text-red-400 border border-red-500/20">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
+                                  Desativado
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-xs text-neutral-400 mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5">
+                              <span>E-mail: <strong className="text-neutral-300">{s.email}</strong></span>
+                              {s.telefone && <span>• Fone: <strong className="text-neutral-300">{s.telefone}</strong></span>}
+                              <span>• Meta: <strong className="text-amber-400 font-num">{s.metaMensal || 5} veículos por mês</strong></span>
+                            </div>
+                          </div>
                         </div>
-                        <div>
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-bold text-sm text-white">{s.nome}</span>
+
+                        {/* Botões de Ação: Alternar Status, Editar e Apagar */}
+                        <div className="flex items-center gap-2 self-end sm:self-center">
+                          <button
+                            type="button"
+                            onClick={() => handleToggleSalespersonClick(s.id)}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer border ${
+                              isAtivo
+                                ? 'bg-neutral-800 hover:bg-amber-900/40 text-amber-300 hover:text-amber-200 border-neutral-700 hover:border-amber-700/50'
+                                : 'bg-emerald-950/40 hover:bg-emerald-900/60 text-emerald-300 border-emerald-800/50'
+                            }`}
+                            title={isAtivo ? 'Desativar vendedor' : 'Ativar vendedor'}
+                          >
                             {isAtivo ? (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                                Ativo na Loja
-                              </span>
+                              <>
+                                <PowerOff className="w-3.5 h-3.5" />
+                                <span>Desativar</span>
+                              </>
                             ) : (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-red-500/10 text-red-400 border border-red-500/20">
-                                <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
-                                Desativado
-                              </span>
+                              <>
+                                <Power className="w-3.5 h-3.5" />
+                                <span>Ativar</span>
+                              </>
                             )}
-                          </div>
-                          <div className="text-xs text-neutral-400 mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5">
-                            <span>E-mail: <strong className="text-neutral-300">{s.email}</strong></span>
-                            {s.telefone && <span>• Fone: <strong className="text-neutral-300">{s.telefone}</strong></span>}
-                            <span>• Meta: <strong className="text-amber-400 font-num">{s.metaMensal || 5} veículos/mês</strong></span>
-                          </div>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setEditingSalesperson(s)}
+                            className="p-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white border border-neutral-700 transition-colors cursor-pointer"
+                            title="Editar dados do vendedor"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setDeleteSalespersonConfirm(s)}
+                            className="p-1.5 rounded-lg bg-neutral-800 hover:bg-red-950/60 text-neutral-400 hover:text-red-400 border border-neutral-700 hover:border-red-800/60 transition-colors cursor-pointer"
+                            title="Apagar membro da equipe"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         </div>
                       </div>
+                    );
+                  })}
+                </div>
 
-                      {/* Botões de Ação: Ativar/Desativar, Editar e Apagar */}
-                      <div className="flex items-center gap-2 self-end sm:self-center">
-                        <button
-                          type="button"
-                          onClick={() => handleToggleSalespersonClick(s.id)}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer border ${
-                            isAtivo
-                              ? 'bg-neutral-800 hover:bg-amber-900/40 text-amber-300 hover:text-amber-200 border-neutral-700 hover:border-amber-700/50'
-                              : 'bg-emerald-950/40 hover:bg-emerald-900/60 text-emerald-300 border-emerald-800/50'
-                          }`}
-                          title={isAtivo ? 'Desativar vendedor' : 'Ativar vendedor'}
-                        >
-                          {isAtivo ? (
-                            <>
-                              <PowerOff className="w-3.5 h-3.5" />
-                              <span>Desativar</span>
-                            </>
-                          ) : (
-                            <>
-                              <Power className="w-3.5 h-3.5" />
-                              <span>Ativar</span>
-                            </>
-                          )}
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => setEditingSalesperson(s)}
-                          className="p-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white border border-neutral-700 transition-colors cursor-pointer"
-                          title="Editar dados do vendedor"
-                        >
-                          <Edit3 className="w-3.5 h-3.5" />
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => setDeleteSalespersonConfirm(s)}
-                          className="p-1.5 rounded-lg bg-neutral-800 hover:bg-red-950/60 text-neutral-400 hover:text-red-400 border border-neutral-700 hover:border-red-800/60 transition-colors cursor-pointer"
-                          title="Apagar membro da equipe"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
+                {paginatedSalespeople.totalItems > 0 && (
+                  <div className="p-3 border-t border-neutral-800">
+                    <PaginationControls
+                      currentPage={paginatedSalespeople.currentPage}
+                      totalPages={paginatedSalespeople.totalPages}
+                      totalItems={paginatedSalespeople.totalItems}
+                      pageSize={paginatedSalespeople.pageSize}
+                      onPageChange={paginatedSalespeople.goToPage}
+                      onPageSizeChange={paginatedSalespeople.changePageSize}
+                      pageSizeOptions={[5, 10, 20]}
+                      isCached={paginatedSalespeople.isCurrentPageCached}
+                      isLoading={paginatedSalespeople.isLoading}
+                      itemLabel="consultores"
+                    />
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -1589,6 +1741,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <input
                   type="text"
                   required
+                  maxLength={100}
                   value={editingFinancier.nome}
                   onChange={(e) => setEditingFinancier({ ...editingFinancier, nome: e.target.value })}
                   className={formStyles.input}
@@ -1601,9 +1754,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   <input
                     type="number"
                     step="0.01"
+                    min="0.01"
+                    max="50"
                     required
-                    value={editingFinancier.taxaMedia || 1.49}
-                    onChange={(e) => setEditingFinancier({ ...editingFinancier, taxaMedia: Number(e.target.value) })}
+                    value={editingFinancier.taxaMedia ?? 1.49}
+                    onChange={(e) => setEditingFinancier({ ...editingFinancier, taxaMedia: clampNumber(e.target.value, 0, 50, 0) })}
                     className={formStyles.input}
                   />
                 </div>
@@ -1611,6 +1766,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   <label className={formStyles.label}>Telefone</label>
                   <input
                     type="text"
+                    maxLength={15}
                     value={editingFinancier.telefone || ''}
                     onChange={(e) => setEditingFinancier({ ...editingFinancier, telefone: maskPhone(e.target.value) })}
                     className={formStyles.input}
@@ -1619,9 +1775,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               </div>
 
               <div>
-                <label className={formStyles.label}>Contato do Gerente / Mesa</label>
+                <label className={formStyles.label}>Contato do Gerente</label>
                 <input
                   type="text"
+                  maxLength={100}
                   value={editingFinancier.contato || editingFinancier.contatoGerente || ''}
                   onChange={(e) => setEditingFinancier({ 
                     ...editingFinancier, 
@@ -1709,7 +1866,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         </div>
       )}
 
-      {/* MODAL 3: Editar Membro da Equipe / Vendedor */}
+      {/* MODAL 3: Editar Consultor de Vendas */}
       {editingSalesperson && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4">
@@ -1735,6 +1892,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <input
                   type="text"
                   required
+                  maxLength={120}
                   value={editingSalesperson.nome}
                   onChange={(e) => setEditingSalesperson({ ...editingSalesperson, nome: e.target.value })}
                   className={formStyles.input}
@@ -1742,9 +1900,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               </div>
 
               <div>
-                <label className={formStyles.label}>E-mail</label>
+                <label className={formStyles.label}>E-mail *</label>
                 <input
                   type="email"
+                  required
+                  maxLength={120}
                   value={editingSalesperson.email}
                   onChange={(e) => setEditingSalesperson({ ...editingSalesperson, email: e.target.value })}
                   className={formStyles.input}
@@ -1756,19 +1916,20 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   <label className={formStyles.label}>WhatsApp (DDD 83)</label>
                   <input
                     type="text"
+                    maxLength={15}
                     value={editingSalesperson.telefone}
                     onChange={(e) => setEditingSalesperson({ ...editingSalesperson, telefone: maskPhone(e.target.value) })}
                     className={formStyles.input}
                   />
                 </div>
                 <div>
-                  <label className={formStyles.label}>Meta (Veículos/mês)</label>
+                  <label className={formStyles.label}>Meta Mensal (Veículos)</label>
                   <input
                     type="number"
                     min={1}
-                    max={50}
-                    value={editingSalesperson.metaMensal || 5}
-                    onChange={(e) => setEditingSalesperson({ ...editingSalesperson, metaMensal: Number(e.target.value) })}
+                    max={100}
+                    value={editingSalesperson.metaMensal ?? 5}
+                    onChange={(e) => setEditingSalesperson({ ...editingSalesperson, metaMensal: Math.trunc(clampNumber(e.target.value, 0, 100, 0)) })}
                     className={formStyles.input}
                   />
                 </div>
@@ -1849,7 +2010,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
       {/* ABA 5: Banco de Dados Firebase (VA VEÍCULOS) */}
       {activeTab === 'firebase' && (
-        <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 max-w-4xl space-y-6">
+        <div className="bg-[#17171A] border border-[#2D2D32] rounded-[14px] p-6 w-full space-y-6">
           <div className="flex items-center justify-between pb-4 border-b border-neutral-800">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-500">

@@ -1,21 +1,23 @@
 import React, { useState, useMemo } from 'react';
 import { 
-  History, Search, Filter, ChevronLeft, ChevronRight, 
-  Car, Calendar, User, DollarSign, Wrench, ShieldCheck, 
-  CheckCircle, FileText, ArrowRight, X, Clock, Eye, AlertCircle
+  History, Search, 
+  Car, CheckCircle, FileText, X, Clock, Eye
 } from 'lucide-react';
-import { Vehicle, FormerOwner, Sale, StoreProfile } from '../../types';
+import { Vehicle, FormerOwner, Sale, StoreProfile, UserRole } from '../../types';
 import { 
   formatCurrency, formatDate, formatNumber, 
-  computeAcquisitionCost, computePatioExpenses, 
-  computePreSaleTotalCost, computeNetProfit, computeMarginPercent 
+  computeAcquisitionCost, computePatioExpenses, computePostSaleCosts,
+  computePreSaleTotalCost, computeNetProfit, computeSaleMarginPercent 
 } from '../../utils/formatters';
+import { PaginationControls } from '../common/PaginationControls';
+import { usePaginatedList } from '../../hooks/usePaginatedList';
 
 interface VehicleHistoryViewProps {
   vehicles: Vehicle[];
   owners: FormerOwner[];
   sales: Sale[];
-  store: StoreProfile;
+  store?: StoreProfile;
+  userRole?: UserRole;
   onOpenContractModal?: (vehicle: Vehicle, type: 'compra' | 'venda') => void;
   onSelectOwner?: (ownerId: string) => void;
 }
@@ -24,14 +26,12 @@ export const VehicleHistoryView: React.FC<VehicleHistoryViewProps> = ({
   vehicles,
   owners,
   sales,
-  store,
-  onOpenContractModal,
-  onSelectOwner
+  userRole = 'vendedor',
+  onOpenContractModal
 }) => {
+  const isGestor = userRole === 'gestor';
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<'todos' | 'em_estoque' | 'vendido'>('todos');
-  const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 10;
   
   // Modal de Ficha / Dossiê Completo
   const [selectedVehicleForDossier, setSelectedVehicleForDossier] = useState<Vehicle | null>(null);
@@ -88,18 +88,12 @@ export const VehicleHistoryView: React.FC<VehicleHistoryViewProps> = ({
     });
   }, [vehicles, searchTerm, statusFilter, ownersMap, salesMap]);
 
-  // Paginação estrita de 10 em 10
-  const totalPages = Math.max(1, Math.ceil(filteredVehicles.length / itemsPerPage));
-  const paginatedVehicles = useMemo(() => {
-    const startIndex = (currentPage - 1) * itemsPerPage;
-    return filteredVehicles.slice(startIndex, startIndex + itemsPerPage);
-  }, [filteredVehicles, currentPage]);
-
-  const handlePageChange = (newPage: number) => {
-    if (newPage >= 1 && newPage <= totalPages) {
-      setCurrentPage(newPage);
-    }
-  };
+  // Paginação com cache inteligente de páginas anteriores
+  const pagination = usePaginatedList<Vehicle>({
+    items: filteredVehicles,
+    initialPageSize: 10,
+    dependencies: [searchTerm, statusFilter, filteredVehicles.length]
+  });
 
   // Obter dados do dossiê selecionado
   const selectedVehicleOwner = selectedVehicleForDossier ? ownersMap.get(selectedVehicleForDossier.antigoDonoId) : null;
@@ -116,7 +110,9 @@ export const VehicleHistoryView: React.FC<VehicleHistoryViewProps> = ({
             <h1 className="text-xl sm:text-2xl font-bold text-white">Histórico Geral de Movimentação</h1>
           </div>
           <p className="text-neutral-400 text-xs sm:text-sm mt-1">
-            Rastreabilidade completa de cada veículo: entrada, antigo dono, custos de pátio, vendas e compradores (10 por página).
+            {isGestor
+              ? 'Rastreabilidade completa de cada veículo: entrada, antigo dono, custos de pátio, vendas e compradores (10 por página).'
+              : 'Histórico operacional de movimentação dos veículos: entrada, proprietário anterior, situação e comprador (10 por página).'}
           </p>
         </div>
 
@@ -133,20 +129,15 @@ export const VehicleHistoryView: React.FC<VehicleHistoryViewProps> = ({
           <Search className="w-4 h-4 text-neutral-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
           <input
             type="text"
+            maxLength={100}
             value={searchTerm}
-            onChange={(e) => {
-              setSearchTerm(e.target.value);
-              setCurrentPage(1);
-            }}
+            onChange={(e) => setSearchTerm(e.target.value)}
             placeholder="Pesquisar por Placa, Antigo Dono, CPF, Modelo, Cor, RENAVAM ou Comprador..."
             className="w-full bg-neutral-950 border border-neutral-800 rounded-xl pl-10 pr-4 py-2 text-xs sm:text-sm text-white placeholder-neutral-500 focus:outline-none focus:border-amber-500 transition-colors"
           />
           {searchTerm && (
             <button
-              onClick={() => {
-                setSearchTerm('');
-                setCurrentPage(1);
-              }}
+              onClick={() => setSearchTerm('')}
               className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-500 hover:text-white text-xs cursor-pointer"
             >
               Limpar
@@ -157,10 +148,7 @@ export const VehicleHistoryView: React.FC<VehicleHistoryViewProps> = ({
         {/* Status Filter */}
         <div className="flex items-center gap-1.5 bg-neutral-950 p-1 rounded-xl border border-neutral-800 text-xs self-start md:self-auto">
           <button
-            onClick={() => {
-              setStatusFilter('todos');
-              setCurrentPage(1);
-            }}
+            onClick={() => setStatusFilter('todos')}
             className={`px-3 py-1.5 rounded-lg font-medium transition-colors cursor-pointer ${
               statusFilter === 'todos' ? 'bg-neutral-800 text-white font-bold' : 'text-neutral-400 hover:text-white'
             }`}
@@ -168,10 +156,7 @@ export const VehicleHistoryView: React.FC<VehicleHistoryViewProps> = ({
             Todos ({vehicles.length})
           </button>
           <button
-            onClick={() => {
-              setStatusFilter('em_estoque');
-              setCurrentPage(1);
-            }}
+            onClick={() => setStatusFilter('em_estoque')}
             className={`px-3 py-1.5 rounded-lg font-medium transition-colors cursor-pointer ${
               statusFilter === 'em_estoque' ? 'bg-amber-500/20 text-amber-300 font-bold border border-amber-500/30' : 'text-neutral-400 hover:text-white'
             }`}
@@ -179,10 +164,7 @@ export const VehicleHistoryView: React.FC<VehicleHistoryViewProps> = ({
             Em Estoque ({vehicles.filter(v => v.status === 'em_estoque').length})
           </button>
           <button
-            onClick={() => {
-              setStatusFilter('vendido');
-              setCurrentPage(1);
-            }}
+            onClick={() => setStatusFilter('vendido')}
             className={`px-3 py-1.5 rounded-lg font-medium transition-colors cursor-pointer ${
               statusFilter === 'vendido' ? 'bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30' : 'text-neutral-400 hover:text-white'
             }`}
@@ -201,21 +183,21 @@ export const VehicleHistoryView: React.FC<VehicleHistoryViewProps> = ({
                 <th className="py-3 px-4">Veículo</th>
                 <th className="py-3 px-4">Entrada & Origem</th>
                 <th className="py-3 px-4">Antigo Proprietário</th>
-                <th className="py-3 px-4">Custos de Pátio</th>
-                <th className="py-3 px-4">Situação / Saída</th>
+                {isGestor && <th className="py-3 px-4">Custos de Pátio</th>}
+                <th className="py-3 px-4">Situação do Veículo</th>
                 <th className="py-3 px-4 text-right">Ações</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-800/60 text-neutral-300">
-              {paginatedVehicles.length === 0 ? (
+              {pagination.totalItems === 0 ? (
                 <tr>
-                  <td colSpan={6} className="text-center py-12 text-neutral-500">
+                  <td colSpan={isGestor ? 6 : 5} className="text-center py-12 text-neutral-500">
                     <Car className="w-8 h-8 mx-auto mb-2 opacity-40" />
                     Nenhum veículo encontrado com os filtros atuais.
                   </td>
                 </tr>
               ) : (
-                paginatedVehicles.map((vehicle) => {
+                pagination.paginatedItems.map((vehicle) => {
                   const owner = ownersMap.get(vehicle.antigoDonoId);
                   const sale = salesMap.get(vehicle.id);
                   const patioCosts = computePatioExpenses(vehicle);
@@ -254,9 +236,11 @@ export const VehicleHistoryView: React.FC<VehicleHistoryViewProps> = ({
                       <td className="py-3 px-4 whitespace-nowrap">
                         <div className="flex flex-col">
                           <span className="font-medium text-white">{formatDate(vehicle.dataEntrada)}</span>
-                          <span className="text-[11px] text-neutral-400">
-                            Pago: <strong className="text-amber-400 tabular-nums">{formatCurrency(vehicle.valorPago)}</strong>
-                          </span>
+                          {isGestor && (
+                            <span className="text-[11px] text-neutral-400">
+                              Pago: <strong className="text-amber-400 tabular-nums">{formatCurrency(vehicle.valorPago)}</strong>
+                            </span>
+                          )}
                           <span className="text-[10px] text-neutral-500">
                             Entrada por: {vehicle.cadastradoPor || 'Gestor'}
                           </span>
@@ -276,22 +260,24 @@ export const VehicleHistoryView: React.FC<VehicleHistoryViewProps> = ({
                         )}
                       </td>
 
-                      {/* Custos de Pátio */}
-                      <td className="py-3 px-4 whitespace-nowrap">
-                        <div className="flex flex-col">
-                          <span className="font-semibold text-neutral-200 tabular-nums">
-                            {formatCurrency(patioCosts)}
-                          </span>
-                          <span className="text-[10px] text-neutral-400">
-                            {vehicle.custosPatio?.length || 0} despesa(s)
-                          </span>
-                          <span className="text-[10px] text-neutral-500">
-                            Custo Total: {formatCurrency(totalPreCost)}
-                          </span>
-                        </div>
-                      </td>
+                      {/* Custos de Pátio — exclusivo do Gestor */}
+                      {isGestor && (
+                        <td className="py-3 px-4 whitespace-nowrap">
+                          <div className="flex flex-col">
+                            <span className="font-semibold text-neutral-200 tabular-nums">
+                              {formatCurrency(patioCosts)}
+                            </span>
+                            <span className="text-[10px] text-neutral-400">
+                              {vehicle.custosPatio?.length || 0} despesa(s)
+                            </span>
+                            <span className="text-[10px] text-neutral-500">
+                              Custo Total: {formatCurrency(totalPreCost)}
+                            </span>
+                          </div>
+                        </td>
+                      )}
 
-                      {/* Situação / Saída */}
+                      {/* Situação do Veículo */}
                       <td className="py-3 px-4 whitespace-nowrap">
                         {vehicle.status === 'vendido' && sale ? (
                           <div className="flex flex-col">
@@ -337,59 +323,24 @@ export const VehicleHistoryView: React.FC<VehicleHistoryViewProps> = ({
           </table>
         </div>
 
-        {/* Barra de Paginação (Estrita de 10 em 10) */}
-        <div className="bg-neutral-950/80 px-4 py-3 border-t border-neutral-800 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
-          <div className="text-neutral-400">
-            Exibindo página <strong className="text-white tabular-nums">{currentPage}</strong> de{' '}
-            <strong className="text-white tabular-nums">{totalPages}</strong> ({filteredVehicles.length} veículos no filtro)
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => handlePageChange(currentPage - 1)}
-              disabled={currentPage <= 1}
-              className="px-3 py-1.5 rounded-lg bg-neutral-900 border border-neutral-800 text-neutral-300 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1 cursor-pointer transition-colors"
-            >
-              <ChevronLeft className="w-4 h-4" />
-              Anterior
-            </button>
-
-            {/* Números de páginas */}
-            <div className="flex items-center gap-1">
-              {Array.from({ length: totalPages }, (_, i) => i + 1)
-                .filter(page => page === 1 || page === totalPages || Math.abs(page - currentPage) <= 1)
-                .map((page, idx, arr) => (
-                  <React.Fragment key={page}>
-                    {idx > 0 && arr[idx - 1] !== page - 1 && (
-                      <span className="text-neutral-600 px-1">...</span>
-                    )}
-                    <button
-                      onClick={() => handlePageChange(page)}
-                      className={`w-7 h-7 rounded-lg font-bold text-xs transition-colors cursor-pointer ${
-                        currentPage === page
-                          ? 'bg-amber-500 text-neutral-950'
-                          : 'bg-neutral-900 text-neutral-400 hover:text-white'
-                      }`}
-                    >
-                      {page}
-                    </button>
-                  </React.Fragment>
-                ))}
-            </div>
-
-            <button
-              onClick={() => handlePageChange(currentPage + 1)}
-              disabled={currentPage >= totalPages}
-              className="px-3 py-1.5 rounded-lg bg-neutral-900 border border-neutral-800 text-neutral-300 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1 cursor-pointer transition-colors"
-            >
-              Próximo
-              <ChevronRight className="w-4 h-4" />
-            </button>
-          </div>
+        {/* Paginação com Cache */}
+        <div className="p-3 bg-neutral-950 border-t border-neutral-800">
+          <PaginationControls
+            currentPage={pagination.currentPage}
+            totalPages={pagination.totalPages}
+            totalItems={pagination.totalItems}
+            pageSize={pagination.pageSize}
+            onPageChange={pagination.goToPage}
+            onPageSizeChange={pagination.changePageSize}
+            pageSizeOptions={[10, 20, 50]}
+            isCached={pagination.isCurrentPageCached}
+            isLoading={pagination.isLoading}
+            itemLabel="veículos no histórico"
+          />
         </div>
       </div>
 
-      {/* MODAL DE FICHA COMPLETA / DOSSIÊ DO VEÍCULO */}
+      {/* MODAL DE FICHA COMPLETA DO VEÍCULO */}
       {selectedVehicleForDossier && (
         <div className="fixed inset-0 z-50 overflow-y-auto bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6">
           <div className="bg-neutral-900 border border-neutral-800 rounded-2xl w-full max-w-4xl overflow-hidden shadow-2xl relative text-white my-8 max-h-[92vh] flex flex-col">
@@ -424,7 +375,7 @@ export const VehicleHistoryView: React.FC<VehicleHistoryViewProps> = ({
               {/* Resumo Rápido Topo */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-neutral-950 p-4 rounded-xl border border-neutral-800">
                 <div>
-                  <span className="text-[10px] text-neutral-500 block uppercase">Ano Fab/Mod</span>
+                  <span className="text-[10px] text-neutral-500 block uppercase">Ano Fabricação e Modelo</span>
                   <strong className="text-white text-sm">{selectedVehicleForDossier.anoFabricacao}/{selectedVehicleForDossier.anoModelo}</strong>
                 </div>
                 <div>
@@ -456,7 +407,7 @@ export const VehicleHistoryView: React.FC<VehicleHistoryViewProps> = ({
 
                 <div className="relative border-l-2 border-neutral-800 ml-4 space-y-6 pb-2">
                   
-                  {/* Evento 1: Entrada / Compra */}
+                  {/* Evento 1: Entrada do Veículo */}
                   <div className="relative pl-6">
                     <span className="absolute -left-[9px] top-1 w-4 h-4 rounded-full bg-amber-500 border-2 border-neutral-900" />
                     <div className="bg-neutral-950 p-4 rounded-xl border border-neutral-800">
@@ -473,14 +424,20 @@ export const VehicleHistoryView: React.FC<VehicleHistoryViewProps> = ({
                           <p><strong className="text-neutral-400">Endereço:</strong> {selectedVehicleOwner?.endereco || '-'}</p>
                         </div>
                         <div>
-                          <p><strong className="text-neutral-400">Valor Pago ao Dono:</strong> <span className="text-amber-400 font-bold">{formatCurrency(selectedVehicleForDossier.valorPago)}</span></p>
-                          <p><strong className="text-neutral-400">Débito Detran:</strong> {selectedVehicleForDossier.debitoDetran?.temDebito ? `${formatCurrency(selectedVehicleForDossier.debitoDetran.valor)} (Arcado por: ${selectedVehicleForDossier.debitoDetran.quemArca})` : 'Sem débitos'}</p>
+                          {isGestor && (
+                            <>
+                              <p><strong className="text-neutral-400">Valor Pago ao Dono:</strong> <span className="text-amber-400 font-bold">{formatCurrency(selectedVehicleForDossier.valorPago)}</span></p>
+                              <p><strong className="text-neutral-400">Débito Detran:</strong> {selectedVehicleForDossier.debitoDetran?.temDebito ? `${formatCurrency(selectedVehicleForDossier.debitoDetran.valor)} (Arcado por: ${selectedVehicleForDossier.debitoDetran.quemArca})` : 'Sem débitos'}</p>
+                            </>
+                          )}
                           <p><strong className="text-neutral-400">Cadastrado por:</strong> {selectedVehicleForDossier.cadastradoPor || 'Gestor'}</p>
-                          <p><strong className="text-neutral-400">Custo Total de Aquisição:</strong> {formatCurrency(computeAcquisitionCost(selectedVehicleForDossier))}</p>
+                          {isGestor && (
+                            <p><strong className="text-neutral-400">Custo Total de Aquisição:</strong> {formatCurrency(computeAcquisitionCost(selectedVehicleForDossier))}</p>
+                          )}
                         </div>
                       </div>
 
-                      {onOpenContractModal && (
+                      {isGestor && onOpenContractModal && (
                         <div className="mt-3 pt-3 border-t border-neutral-800/80">
                           <button
                             onClick={() => onOpenContractModal(selectedVehicleForDossier, 'compra')}
@@ -500,9 +457,11 @@ export const VehicleHistoryView: React.FC<VehicleHistoryViewProps> = ({
                     <div className="bg-neutral-950 p-4 rounded-xl border border-neutral-800">
                       <div className="flex items-center justify-between mb-2">
                         <span className="font-bold text-white text-sm">2. Preparação de Pátio & Manutenções</span>
-                        <span className="text-blue-400 font-bold">
-                          Total: {formatCurrency(computePatioExpenses(selectedVehicleForDossier))}
-                        </span>
+                        {isGestor && (
+                          <span className="text-blue-400 font-bold">
+                            Total: {formatCurrency(computePatioExpenses(selectedVehicleForDossier))}
+                          </span>
+                        )}
                       </div>
 
                       {selectedVehicleForDossier.custosPatio && selectedVehicleForDossier.custosPatio.length > 0 ? (
@@ -515,19 +474,21 @@ export const VehicleHistoryView: React.FC<VehicleHistoryViewProps> = ({
                                   Categoria: {exp.categoria} · Data: {formatDate(exp.data)}
                                 </span>
                               </div>
-                              <span className="font-bold text-neutral-200 tabular-nums">
-                                {formatCurrency(exp.valor)}
-                              </span>
+                              {isGestor && (
+                                <span className="font-bold text-neutral-200 tabular-nums">
+                                  {formatCurrency(exp.valor)}
+                                </span>
+                              )}
                             </div>
                           ))}
                         </div>
                       ) : (
-                        <p className="text-neutral-500 italic">Nenhum custo adicional lançado para este veículo.</p>
+                        <p className="text-neutral-500 italic">Nenhum serviço adicional registrado para este veículo.</p>
                       )}
                     </div>
                   </div>
 
-                  {/* Evento 3: Venda / Saída (Se houver) */}
+                  {/* Evento 3: Venda Concluída (Se houver) */}
                   {selectedVehicleSale ? (
                     <div className="relative pl-6">
                       <span className="absolute -left-[9px] top-1 w-4 h-4 rounded-full bg-emerald-500 border-2 border-neutral-900" />
@@ -548,28 +509,36 @@ export const VehicleHistoryView: React.FC<VehicleHistoryViewProps> = ({
                             <p><strong className="text-neutral-400">Valor Final de Venda:</strong> <span className="text-emerald-400 font-bold">{formatCurrency(selectedVehicleSale.valorVenda)}</span></p>
                             <p><strong className="text-neutral-400">Forma de Pagamento:</strong> {selectedVehicleSale.formaPagamento}</p>
                             <p><strong className="text-neutral-400">Vendedor:</strong> {selectedVehicleSale.vendedorNome}</p>
-                            <p><strong className="text-neutral-400">Comissão do Vendedor:</strong> {formatCurrency(selectedVehicleSale.comissaoValor)}</p>
+                            {isGestor && (
+                              <>
+                                <p><strong className="text-neutral-400">Comissão do Vendedor:</strong> {formatCurrency(selectedVehicleSale.comissaoValor)}</p>
+                                <p><strong className="text-neutral-400">Despesas Pós-Venda:</strong> {formatCurrency(computePostSaleCosts(selectedVehicleSale))}</p>
+                              </>
+                            )}
                           </div>
                         </div>
 
-                        {/* Balanço DRE do Carro */}
-                        <div className="mt-4 p-3 rounded-lg bg-neutral-900 border border-neutral-800 flex items-center justify-between">
-                          <div>
-                            <span className="text-[10px] text-neutral-400 block uppercase">Lucro Líquido Real</span>
-                            <span className="text-lg font-extrabold text-emerald-400 tabular-nums">
-                              {formatCurrency(computeNetProfit(selectedVehicleForDossier, selectedVehicleSale))}
-                            </span>
-                          </div>
-                          <div className="text-right">
-                            <span className="text-[10px] text-neutral-400 block uppercase">Margem Líquida</span>
-                            <span className="text-sm font-bold text-white tabular-nums">
-                              {computeMarginPercent(
-                                selectedVehicleSale.valorVenda,
-                                computePreSaleTotalCost(selectedVehicleForDossier) + (selectedVehicleSale.comissaoValor || 0)
-                              ).toFixed(1)}%
-                            </span>
-                          </div>
-                        </div>
+                        {/* Balanço DRE do Carro — exclusivo do Gestor */}
+                        {isGestor && (() => {
+                          const dossierProfit = computeNetProfit(selectedVehicleForDossier, selectedVehicleSale);
+                          const dossierMargin = computeSaleMarginPercent(selectedVehicleForDossier, selectedVehicleSale);
+                          return (
+                            <div className="mt-4 p-3 rounded-lg bg-neutral-900 border border-neutral-800 flex items-center justify-between">
+                              <div>
+                                <span className="text-[10px] text-neutral-400 block uppercase">Lucro Líquido Real</span>
+                                <span className={`text-lg font-extrabold tabular-nums ${dossierProfit >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                  {formatCurrency(dossierProfit)}
+                                </span>
+                              </div>
+                              <div className="text-right">
+                                <span className="text-[10px] text-neutral-400 block uppercase">Margem Líquida</span>
+                                <span className={`text-sm font-bold tabular-nums ${dossierMargin >= 0 ? 'text-white' : 'text-red-400'}`}>
+                                  {dossierMargin.toFixed(1)}%
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })()}
 
                         {onOpenContractModal && (
                           <div className="mt-3 pt-3 border-t border-neutral-800/80">
@@ -578,7 +547,7 @@ export const VehicleHistoryView: React.FC<VehicleHistoryViewProps> = ({
                               className="text-emerald-400 hover:text-emerald-300 font-medium inline-flex items-center gap-1.5 cursor-pointer"
                             >
                               <FileText className="w-3.5 h-3.5" />
-                              Visualizar Contrato / Recibo de Venda Timbrado
+                              Visualizar Contrato de Venda Timbrado
                             </button>
                           </div>
                         )}

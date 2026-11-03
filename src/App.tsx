@@ -12,7 +12,6 @@ import { PersonsView } from './components/management/PersonsView';
 import { SalesHistoryView } from './components/management/SalesHistoryView';
 import { PendingCommissionsView } from './components/management/PendingCommissionsView';
 import { FinancialView } from './components/management/FinancialView';
-import { OwnersView } from './components/management/OwnersView';
 import { SettingsView } from './components/management/SettingsView';
 import { DocumentsView } from './components/management/DocumentsView';
 import { AuditLogView } from './components/management/AuditLogView';
@@ -21,20 +20,74 @@ import { VehicleEntryModal } from './components/management/VehicleEntryModal';
 import { VehicleCostsModal } from './components/management/VehicleCostsModal';
 import { VehicleSaleModal } from './components/management/VehicleSaleModal';
 import { ContractsAndReceiptsModal } from './components/management/ContractsAndReceiptsModal';
+import { AuthModal } from './components/common/AuthModal';
+import { LoginView } from './components/auth/LoginView';
+import { UsersManagementView } from './components/management/UsersManagementView';
 
 import { storageService } from './services/storage';
+import { firebaseAuth } from './services/firebase';
+import {
+  createStaffSession,
+  loadVerifiedStaffSession,
+  clearStaffSession
+} from './utils/security';
 import { 
   Vehicle, FormerOwner, Sale, Financier, 
   ContractTemplate, Salesperson, StoreProfile, 
-  UserRole, VehicleExpense, PostSaleCost 
+  UserRole, VehicleExpense, PostSaleCost, SystemUser 
 } from './types';
 
+const GESTOR_ONLY_TABS = new Set(['financial', 'audit_logs', 'users', 'settings']);
+
+function resolveSellerForUser(user: SystemUser | null, spList: Salesperson[]): Salesperson | null {
+  if (!user) return null;
+  if (user.papel === 'vendedor') {
+    const match = spList.find(s => s.id === user.id || s.email.toLowerCase() === user.email.toLowerCase());
+    if (match) return match;
+    return {
+      id: user.id,
+      nome: user.nome,
+      email: user.email,
+      telefone: user.telefone || '',
+      metaMensal: user.metaMensal || 5,
+      ativo: true
+    };
+  }
+  return spList[0] || null;
+}
+
 export default function App() {
-  // Navigation & Role State
-  const [currentView, setCurrentView] = useState<'management' | 'showroom'>('management');
+  // Reidratação criptográfica da sessão autenticada (bloqueia bypass via sessionStorage / DevTools)
+  const [authenticatedUser, setAuthenticatedUser] = useState<SystemUser | null>(() => {
+    return loadVerifiedStaffSession(storageService.getUsers());
+  });
+  const [isStaffAuthenticated, setIsStaffAuthenticated] = useState<boolean>(() => {
+    return Boolean(loadVerifiedStaffSession(storageService.getUsers()));
+  });
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [targetAuthRole, setTargetAuthRole] = useState<'gestor' | 'vendedor'>('gestor');
+
+  // Navigation & Role State (padrão de menor privilégio: 'vendedor' quando não for gestor autenticado)
+  const [currentView, setCurrentView] = useState<'management' | 'showroom' | 'login'>(() => {
+    if (typeof window !== 'undefined') {
+      const path = window.location.pathname.toLowerCase();
+      const hash = window.location.hash.toLowerCase();
+      if (path.includes('/login') || hash.includes('login')) {
+        return 'login';
+      }
+    }
+    return loadVerifiedStaffSession(storageService.getUsers()) ? 'management' : 'showroom';
+  });
   const [managementTab, setManagementTab] = useState<string>('dashboard');
-  const [userRole, setUserRole] = useState<UserRole>('gestor');
-  const [activeSeller, setActiveSeller] = useState<Salesperson | null>(null);
+  const [userRole, setUserRole] = useState<UserRole>(() => {
+    return loadVerifiedStaffSession(storageService.getUsers())?.papel ?? 'vendedor';
+  });
+  const [activeSeller, setActiveSeller] = useState<Salesperson | null>(() => {
+    return resolveSellerForUser(
+      loadVerifiedStaffSession(storageService.getUsers()),
+      storageService.getSalespeople()
+    );
+  });
 
   // Sidebar retraction state
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
@@ -46,13 +99,18 @@ export default function App() {
   const [isGlobalSearchOpen, setIsGlobalSearchOpen] = useState(false);
 
   // Entities State from LocalStorage / Firestore
+  const [publicVehicles, setPublicVehicles] = useState<Vehicle[]>(() => storageService.getPublicVehicles());
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [owners, setOwners] = useState<FormerOwner[]>([]);
   const [sales, setSales] = useState<Sale[]>([]);
   const [financiers, setFinanciers] = useState<Financier[]>([]);
   const [templates, setTemplates] = useState<ContractTemplate[]>([]);
   const [salespeople, setSalespeople] = useState<Salesperson[]>([]);
+  const [users, setUsers] = useState<SystemUser[]>([]);
   const [store, setStore] = useState<StoreProfile>(storageService.getStoreProfile());
+
+  // Search filter across tabs
+  const [activeSearchFilter, setActiveSearchFilter] = useState<string>('');
 
   // Modals state
   const [isEntryModalOpen, setIsEntryModalOpen] = useState(false);
@@ -80,26 +138,111 @@ export default function App() {
     });
   };
 
-  // Keyboard shortcut for Global Search (Ctrl+K or Cmd+K)
+  // Keyboard shortcut for Global Search (Ctrl+K or Cmd+K) — restrito a equipe autenticada
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        if (!isStaffAuthenticated || currentView !== 'management') return;
         e.preventDefault();
         setIsGlobalSearchOpen(prev => !prev);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [isStaffAuthenticated, currentView]);
 
-  const refreshData = () => {
+  // Monitora integridade criptográfica da sessão e sincronização cross-tab entre abas abertas
+  useEffect(() => {
+    const handleStorageChange = (e: StorageEvent) => {
+      // 1. Verificação de sessão
+      if (isStaffAuthenticated) {
+        const verified = loadVerifiedStaffSession(storageService.getUsers());
+        if (!verified) {
+          clearStaffSession();
+          setAuthenticatedUser(null);
+          setIsStaffAuthenticated(false);
+          setUserRole('vendedor');
+          setActiveSeller(null);
+          setIsGlobalSearchOpen(false);
+          setCurrentView('login');
+          return;
+        }
+      }
+
+      // 2. Atualização em tempo real caso outra aba modifique entidades do sistema
+      if (e.key && e.key.startsWith('vaveiculos_')) {
+        refreshData(isStaffAuthenticated, userRole);
+      }
+    };
+
+    const handleFocusCheck = () => {
+      if (isStaffAuthenticated) {
+        const verified = loadVerifiedStaffSession(storageService.getUsers());
+        if (!verified) {
+          clearStaffSession();
+          setAuthenticatedUser(null);
+          setIsStaffAuthenticated(false);
+          setUserRole('vendedor');
+          setActiveSeller(null);
+          setIsGlobalSearchOpen(false);
+          setCurrentView('login');
+        } else {
+          refreshData(isStaffAuthenticated, userRole);
+        }
+      }
+    };
+
+    const handleNetworkOnline = () => {
+      storageService
+        .syncFromFirestore(isStaffAuthenticated, userRole)
+        .then(() => refreshData(isStaffAuthenticated, userRole))
+        .catch(err => console.warn('Erro ao ressincronizar após reconexão online:', err));
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('focus', handleFocusCheck);
+    window.addEventListener('online', handleNetworkOnline);
+
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('focus', handleFocusCheck);
+      window.removeEventListener('online', handleNetworkOnline);
+    };
+  }, [isStaffAuthenticated, userRole]);
+
+  // Redireciona imediatamente caso o perfil atual não possua permissão de acesso à aba ativa
+  useEffect(() => {
+    if (userRole !== 'gestor' && GESTOR_ONLY_TABS.has(managementTab)) {
+      setManagementTab('dashboard');
+    }
+  }, [userRole, managementTab]);
+
+  const refreshData = (forceAuthenticated?: boolean, effectiveRole?: UserRole) => {
+    const st = storageService.getStoreProfile();
+    const pubV = storageService.getPublicVehicles();
+    setStore(st);
+    setPublicVehicles(pubV);
+
+    const authed = forceAuthenticated ?? isStaffAuthenticated;
+    const roleToUse = effectiveRole ?? userRole;
+
+    if (!authed) {
+      setVehicles([]);
+      setOwners([]);
+      setSales([]);
+      setFinanciers([]);
+      setTemplates([]);
+      setSalespeople([]);
+      setUsers([]);
+      return;
+    }
+
     const v = storageService.getVehicles();
     const o = storageService.getOwners();
     const s = storageService.getSales();
     const f = storageService.getFinanciers();
     const t = storageService.getTemplates();
     const sp = storageService.getSalespeople();
-    const st = storageService.getStoreProfile();
 
     setVehicles(v);
     setOwners(o);
@@ -107,64 +250,142 @@ export default function App() {
     setFinanciers(f);
     setTemplates(t);
     setSalespeople(sp);
-    setStore(st);
+    setUsers(roleToUse === 'gestor' ? storageService.getUsers() : []);
 
     if (!activeSeller && sp.length > 0) {
-      setActiveSeller(sp[0]);
+      const resolved = resolveSellerForUser(authenticatedUser, sp);
+      if (resolved) setActiveSeller(resolved);
     }
   };
 
-  // Initial load & Firestore background sync
+  // Initial load & Firestore background sync (respeitando menor privilégio e autenticação)
   useEffect(() => {
-    refreshData();
-    storageService.syncFromFirestore().then(() => {
-      refreshData();
+    refreshData(isStaffAuthenticated, userRole);
+    storageService.syncFromFirestore(isStaffAuthenticated, userRole).then(() => {
+      refreshData(isStaffAuthenticated, userRole);
     }).catch(err => {
       console.warn('Sincronização em segundo plano:', err);
     });
-  }, []);
+  }, [isStaffAuthenticated, userRole]);
 
-  const activeUserName = userRole === 'gestor' ? 'Gestor Geral' : (activeSeller?.nome || 'Vendedor');
+  const activeUserName = userRole === 'gestor'
+    ? (authenticatedUser?.nome || 'Gestor Geral')
+    : (activeSeller?.nome || authenticatedUser?.nome || 'Vendedor');
 
-  // Pending commissions count for notifications
-  const pendingCommissionsCount = sales.filter(s => s.comissaoPendente).length;
+  // Pending commissions count for notifications (vendedor vê apenas as próprias pendências)
+  const pendingCommissionsCount = userRole === 'gestor'
+    ? sales.filter(s => s.comissaoPendente).length
+    : sales.filter(s => s.comissaoPendente && activeSeller && s.vendedorId === activeSeller.id).length;
 
-  // Handlers
+  // Safe role & seller setters (impedem elevação sem autenticação de Gestor ou personificação de colega)
+  const handleSetUserRole = (nextRole: UserRole) => {
+    if (nextRole === 'gestor' && authenticatedUser?.papel !== 'gestor') {
+      handleRequestElevateToGestor();
+      return;
+    }
+    setUserRole(nextRole);
+  };
+
+  const handleSetActiveSeller = (seller: Salesperson) => {
+    if (authenticatedUser?.papel !== 'gestor') {
+      return;
+    }
+    setActiveSeller(seller);
+  };
+
+  const handleSelectManagementTab = (tab: string) => {
+    if (userRole !== 'gestor' && GESTOR_ONLY_TABS.has(tab)) {
+      setManagementTab('dashboard');
+      return;
+    }
+    setManagementTab(tab);
+  };
+
+  // Handlers com blindagem RBAC
+  const handleOpenEntryModal = () => {
+    if (userRole !== 'gestor') return;
+    setIsEntryModalOpen(true);
+  };
+
   const handleSaveVehicle = (newVehicle: Vehicle) => {
+    if (userRole !== 'gestor') return;
     storageService.saveVehicle(newVehicle, activeUserName);
-    refreshData();
+    refreshData(true, userRole);
   };
 
   const handleSaveOwner = (newOwner: FormerOwner): FormerOwner => {
     const saved = storageService.saveOwner(newOwner, activeUserName);
-    refreshData();
+    refreshData(true, userRole);
     return saved;
   };
 
   const handleOpenCostsModal = (v: Vehicle) => {
-    setVehicleForCosts(v);
+    if (userRole !== 'gestor') return;
+    const latest = storageService.getVehicles().find(item => item.id === v.id) || v;
+    setVehicleForCosts(latest);
   };
 
   const handleAddPatioExpense = (vehicleId: string, expense: VehicleExpense) => {
-    storageService.addVehicleExpense(vehicleId, expense, activeUserName);
-    refreshData();
-    const updated = storageService.getVehicles().find(v => v.id === vehicleId);
-    if (updated) setVehicleForCosts(updated);
+    if (userRole !== 'gestor') return;
+    try {
+      storageService.addVehicleExpense(vehicleId, expense, activeUserName);
+      refreshData(true, userRole);
+      const updated = storageService.getVehicles().find(v => v.id === vehicleId);
+      if (updated) setVehicleForCosts(updated);
+    } catch (err) {
+      console.warn('Bloqueio ao lançar despesa de pátio:', err);
+    }
   };
 
   const handleOpenSaleModal = (v: Vehicle) => {
-    setVehicleForSale(v);
+    if (!isStaffAuthenticated) return;
+    const latestVehicle = storageService.getVehicles().find(item => item.id === v.id) || v;
+    const hasExistingSale = storageService.getSales().some(s => s.veiculoId === latestVehicle.id);
+    if (latestVehicle.status !== 'em_estoque' || hasExistingSale) {
+      alert(
+        `Operação bloqueada: O veículo ${latestVehicle.marca} ${latestVehicle.modelo} (${latestVehicle.placa}) já consta como vendido ou indisponível para nova venda.`
+      );
+      refreshData(true, userRole);
+      return;
+    }
+    setVehicleForSale(latestVehicle);
   };
 
-  const handleCompleteSale = (newSale: Sale, vehicle: Vehicle) => {
-    storageService.saveSale(newSale, activeUserName);
-    const updatedVehicle: Vehicle = {
-      ...vehicle,
-      status: 'vendido',
-      dataVenda: newSale.dataVenda
-    };
-    storageService.saveVehicle(updatedVehicle, activeUserName);
-    refreshData();
+  const handleCompleteSale = (newSale: Sale, vehicle: Vehicle): boolean => {
+    if (!isStaffAuthenticated) return false;
+
+    // Defesa em profundidade: vendedor nunca pode aprovar a própria comissão nem vender em nome de outro colega
+    const enforcedSale: Sale = userRole === 'gestor'
+      ? newSale
+      : {
+          ...newSale,
+          vendedorId: activeSeller?.id || authenticatedUser?.id || newSale.vendedorId,
+          vendedorNome: activeSeller?.nome || authenticatedUser?.nome || newSale.vendedorNome,
+          comissaoValor: 0,
+          comissaoPendente: true,
+          comissaoDefinidaPor: undefined,
+          dataDefinicaoComissao: undefined
+        };
+
+    try {
+      storageService.saveSale(enforcedSale, activeUserName);
+    } catch (err) {
+      console.warn('Venda recusada pelas travas de integridade:', err);
+      refreshData(true, userRole);
+      return false;
+    }
+
+    const updatedVehicle =
+      storageService.getVehicles().find(v => v.id === vehicle.id) || {
+        ...vehicle,
+        status: 'vendido' as const,
+        dataVenda: enforcedSale.dataVenda
+      };
+    const persistedSale =
+      storageService.getSales().find(s => s.id === enforcedSale.id) || enforcedSale;
+
+    refreshData(true, userRole);
+    setVehicleForSale(null);
 
     // Auto open Contract/Receipt modal for this sale!
     const owner = owners.find(o => o.id === vehicle.antigoDonoId);
@@ -172,64 +393,242 @@ export default function App() {
       isOpen: true,
       vehicle: updatedVehicle,
       owner,
-      sale: newSale,
-      defaultTemplateId: newSale.tipoContratoId
+      sale: persistedSale,
+      defaultTemplateId: persistedSale.tipoContratoId
     });
+    return true;
   };
 
   const handleAddPostSaleCost = (saleId: string, cost: PostSaleCost) => {
-    storageService.addPostSaleCost(saleId, cost);
-    refreshData();
+    if (userRole !== 'gestor') return;
+    try {
+      storageService.addPostSaleCost(saleId, cost);
+      refreshData(true, userRole);
+    } catch (err) {
+      console.warn('Bloqueio ao lançar custo pós-venda:', err);
+    }
   };
 
-  const handleAssignCommission = (saleId: string, amount: number) => {
-    storageService.assignCommission(saleId, amount, activeUserName);
-    refreshData();
+  const handleAssignCommission = (saleId: string, amount: number, expectedVersion?: number) => {
+    if (userRole !== 'gestor') {
+      alert('Operação negada: Apenas o Gestor Geral possui autorização para homologar comissões.');
+      return;
+    }
+    try {
+      storageService.assignCommission(saleId, amount, activeUserName, {
+        requirePending: true,
+        expectedVersion
+      });
+      refreshData(true, userRole);
+    } catch (err) {
+      console.warn('Bloqueio ao fixar comissão:', err);
+      refreshData(true, userRole);
+    }
   };
 
   const handleDeleteVehicle = (vehicleId: string) => {
+    if (userRole !== 'gestor') {
+      alert('Operação negada: Apenas o Gestor Geral possui permissão para remover veículos do estoque.');
+      return;
+    }
     storageService.deleteVehicle(vehicleId, activeUserName);
-    refreshData();
+    refreshData(true, userRole);
+  };
+
+  const handleReserveVehicle = (vehicle: Vehicle, cliente: string, diasValidade: number, valorSinal?: number) => {
+    if (userRole !== 'gestor') {
+      alert('Operação negada: Apenas o Gestor Geral pode realizar reservas de veículos.');
+      return;
+    }
+    const reservadoAte = new Date(Date.now() + diasValidade * 24 * 60 * 60 * 1000).toISOString();
+    const res = storageService.reserveVehicle(
+      vehicle.id,
+      { reservadoPara: cliente, reservadoAte, valorSinal },
+      activeUserName
+    );
+    if (res.success) {
+      refreshData(true, userRole);
+    } else if (res.error) {
+      alert(res.error);
+    }
+  };
+
+  const handleCancelReservation = (vehicleId: string) => {
+    if (userRole !== 'gestor') {
+      alert('Operação negada: Apenas o Gestor Geral pode cancelar reservas.');
+      return;
+    }
+    const res = storageService.cancelReservation(vehicleId, activeUserName);
+    if (res.success) {
+      refreshData(true, userRole);
+    } else if (res.error) {
+      alert(res.error);
+    }
+  };
+
+  const handleCancelSale = (saleId: string, motivo: string) => {
+    if (userRole !== 'gestor') {
+      alert('Operação negada: Apenas o Gestor Geral possui permissão para registrar distrato/cancelamento de vendas.');
+      return;
+    }
+    const cancelled = storageService.cancelSale(saleId, motivo, activeUserName);
+    if (cancelled) {
+      refreshData(true, userRole);
+    }
+  };
+
+  // Staff Authentication & Role Elevation Handlers
+  const handleEnterManagement = () => {
+    const verified = loadVerifiedStaffSession(storageService.getUsers());
+    if (verified && isStaffAuthenticated) {
+      setCurrentView('management');
+    } else {
+      clearStaffSession();
+      setAuthenticatedUser(null);
+      setIsStaffAuthenticated(false);
+      setCurrentView('login');
+      if (typeof window !== 'undefined' && window.history) {
+        window.history.pushState({}, '', '/login');
+      }
+    }
+  };
+
+  const handleOpenShowroom = () => {
+    setCurrentView('showroom');
+    if (typeof window !== 'undefined' && window.history) {
+      window.history.pushState({}, '', '/');
+    }
+  };
+
+  const handleRequestElevateToGestor = () => {
+    setTargetAuthRole('gestor');
+    setIsAuthModalOpen(true);
+  };
+
+  // Autenticação completa (LoginView ou AuthModal) com emissão de sessão assinada HMAC-SHA256
+  const establishAuthenticatedSession = (user: SystemUser, explicitSeller?: Salesperson, resetTab = false) => {
+    createStaffSession(user);
+    setAuthenticatedUser(user);
+    setIsStaffAuthenticated(true);
+    setUserRole(user.papel);
+
+    const spList = storageService.getSalespeople();
+    if (explicitSeller && user.papel === 'gestor') {
+      setActiveSeller(explicitSeller);
+    } else {
+      setActiveSeller(resolveSellerForUser(user, spList));
+    }
+
+    setCurrentView('management');
+    if (resetTab) {
+      setManagementTab('dashboard');
+    }
+    setIsAuthModalOpen(false);
+
+    if (typeof window !== 'undefined' && window.history) {
+      window.history.pushState({}, '', '/');
+    }
+
+    storageService.addAuditLog(
+      'LOGIN_SISTEMA',
+      'sistema',
+      `Login efetuado com sucesso por ${user.nome} (${user.papel.toUpperCase()})`,
+      user.nome
+    );
+
+    refreshData(true, user.papel);
+    storageService.syncFromFirestore(true, user.papel).then(() => {
+      refreshData(true, user.papel);
+    }).catch(err => {
+      console.warn('Sync após login:', err);
+    });
+  };
+
+  const handleFullLoginSuccess = (user: SystemUser) => {
+    establishAuthenticatedSession(user, undefined, true);
+  };
+
+  const handleAuthenticatedUserFromModal = (user: SystemUser, seller?: Salesperson) => {
+    establishAuthenticatedSession(user, seller, false);
+  };
+
+  const handleLogout = () => {
+    const actorName = activeUserName;
+    storageService.addAuditLog(
+      'LOGOUT_SISTEMA',
+      'sistema',
+      'Sessão administrativa encerrada pelo usuário',
+      actorName
+    );
+    clearStaffSession();
+    firebaseAuth.signOutStaff().catch(() => {});
+    setAuthenticatedUser(null);
+    setIsStaffAuthenticated(false);
+    setUserRole('vendedor');
+    setActiveSeller(null);
+    setIsGlobalSearchOpen(false);
+    setIsEntryModalOpen(false);
+    setVehicleForCosts(null);
+    setVehicleForSale(null);
+    setContractModalData({ isOpen: false, vehicle: null });
+    setCurrentView('login');
+    if (typeof window !== 'undefined' && window.history) {
+      window.history.pushState({}, '', '/login');
+    }
   };
 
   const handleOpenPurchaseReceipt = (veh: Vehicle, ownerObj?: FormerOwner) => {
+    if (userRole !== 'gestor') return;
     const owner = ownerObj || owners.find(o => o.id === veh.antigoDonoId);
     const receiptTemplate = templates.find(t => t.tipo === 'recibo_compra') || templates[0];
     setContractModalData({
       isOpen: true,
       vehicle: veh,
       owner,
-      defaultTemplateId: receiptTemplate.id
+      defaultTemplateId: receiptTemplate?.id
     });
   };
 
   const handleOpenSaleContract = (veh: Vehicle, saleObj?: Sale) => {
     const owner = owners.find(o => o.id === veh.antigoDonoId);
     const targetSale = saleObj || sales.find(s => s.veiculoId === veh.id);
+    const prefersRepasse = targetSale
+      ? targetSale.isRepasseSemGarantia
+      : veh.categoriaComercial === 'repasse';
+    const defaultTemplate =
+      targetSale?.tipoContratoId ||
+      templates.find(t => t.tipo === (prefersRepasse ? 'repasse' : 'garantia'))?.id;
     setContractModalData({
       isOpen: true,
       vehicle: veh,
       owner,
       sale: targetSale,
-      defaultTemplateId: targetSale?.tipoContratoId || templates.find(t => t.tipo === 'garantia')?.id
+      defaultTemplateId: defaultTemplate
     });
   };
 
-  const handleResetDemo = () => {
-    storageService.resetToSeed();
-    refreshData();
-  };
-
-  const handleNavigateFromSearch = (tab: string, _entityId?: string) => {
+  const handleNavigateFromSearch = (tab: string, _entityId?: string, queryText?: string) => {
+    if (!isStaffAuthenticated) return;
+    const safeTab = userRole !== 'gestor' && GESTOR_ONLY_TABS.has(tab) ? 'dashboard' : tab;
     setCurrentView('management');
-    setManagementTab(tab);
+    setManagementTab(safeTab);
+    if (queryText) {
+      setActiveSearchFilter(queryText);
+    }
   };
 
   return (
     <div className="min-h-screen bg-[#0D0D0F] text-[#F5F5F5] flex flex-col font-sans selection:bg-[#D4130D] selection:text-white">
       
-      {/* 1. SHOWROOM PUBLIC VIEW (If selected) */}
-      {currentView === 'showroom' ? (
+      {/* 0. DEDICATED FULLSCREEN LOGIN VIEW (ou bloqueio automático caso tente acessar management sem sessão válida) */}
+      {currentView === 'login' || (currentView === 'management' && !isStaffAuthenticated) ? (
+        <LoginView
+          store={store}
+          onLoginSuccess={handleFullLoginSuccess}
+          onOpenShowroom={handleOpenShowroom}
+        />
+      ) : currentView === 'showroom' ? (
+        /* 1. SHOWROOM PUBLIC VIEW (recebe exclusivamente projeção pública sem valorPago/custos internos) */
         <div className="min-h-screen flex flex-col">
           {/* Showroom Top Return Header */}
           <div className="h-14 bg-[#080809] border-b border-[#2D2D32] px-4 sm:px-8 flex items-center justify-between sticky top-0 z-30">
@@ -238,17 +637,17 @@ export default function App() {
             </div>
 
             <button
-              onClick={() => setCurrentView('management')}
+              onClick={handleEnterManagement}
               className="px-3.5 py-1.5 rounded-[8px] bg-[#17171A] hover:bg-[#202024] border border-[#2D2D32] hover:border-[#D4130D] text-xs font-semibold text-[#CAC9CA] hover:text-white transition-colors cursor-pointer"
             >
-              Voltar ao Painel Administrativo →
+              Acessar Painel Administrativo →
             </button>
           </div>
 
           <ShowroomView
-            vehicles={vehicles}
+            vehicles={publicVehicles}
             store={store}
-            onEnterManagement={() => setCurrentView('management')}
+            onEnterManagement={handleEnterManagement}
           />
         </div>
       ) : (
@@ -263,12 +662,15 @@ export default function App() {
             isMobileOpen={isMobileSidebarOpen}
             setIsMobileOpen={setIsMobileSidebarOpen}
             currentTab={managementTab}
-            onSelectTab={(tab) => setManagementTab(tab)}
-            onOpenShowroom={() => setCurrentView('showroom')}
+            onSelectTab={handleSelectManagementTab}
+            onOpenShowroom={handleOpenShowroom}
             userRole={userRole}
-            setUserRole={setUserRole}
+            authenticatedRole={authenticatedUser?.papel || 'vendedor'}
+            setUserRole={handleSetUserRole}
+            onRequestElevateToGestor={handleRequestElevateToGestor}
+            onLogout={handleLogout}
             activeSeller={activeSeller}
-            setActiveSeller={setActiveSeller}
+            setActiveSeller={handleSetActiveSeller}
             salespeople={salespeople}
             pendingCommissionsCount={pendingCommissionsCount}
             store={store}
@@ -284,17 +686,26 @@ export default function App() {
               onToggleSidebar={handleToggleSidebar}
               onOpenMobileSidebar={() => setIsMobileSidebarOpen(true)}
               onOpenGlobalSearch={() => setIsGlobalSearchOpen(true)}
-              onOpenShowroom={() => setCurrentView('showroom')}
+              onOpenShowroom={handleOpenShowroom}
               userRole={userRole}
-              setUserRole={setUserRole}
+              authenticatedRole={authenticatedUser?.papel || 'vendedor'}
+              setUserRole={handleSetUserRole}
+              onRequestElevateToGestor={handleRequestElevateToGestor}
+              onLogout={handleLogout}
               activeSeller={activeSeller}
               pendingCommissionsCount={pendingCommissionsCount}
-              onNavigateToCommissions={() => setManagementTab('commissions')}
+              onNavigateToCommissions={() => handleSelectManagementTab('commissions')}
+              onNavigateTab={(tab, filter) => {
+                if (filter) setActiveSearchFilter(filter);
+                handleSelectManagementTab(tab);
+              }}
+              vehicles={vehicles}
+              sales={sales}
               store={store}
             />
 
             {/* Dynamic Content View */}
-            <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto w-full overflow-y-auto">
+            <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto w-full overflow-y-auto overflow-x-hidden min-w-0">
               
               {managementTab === 'dashboard' && (
                 <DashboardView
@@ -303,9 +714,9 @@ export default function App() {
                   salespeople={salespeople}
                   store={store}
                   userRole={userRole}
-                  onNavigateTab={(tab) => setManagementTab(tab)}
-                  onNavigateToTab={(tab) => setManagementTab(tab)}
-                  onOpenEntryModal={() => setIsEntryModalOpen(true)}
+                  onNavigateTab={handleSelectManagementTab}
+                  onNavigateToTab={handleSelectManagementTab}
+                  onOpenEntryModal={handleOpenEntryModal}
                 />
               )}
 
@@ -313,11 +724,15 @@ export default function App() {
                 <InventoryView
                   vehicles={vehicles}
                   owners={owners}
-                  onOpenEntryModal={() => setIsEntryModalOpen(true)}
+                  userRole={userRole}
+                  initialSearchTerm={managementTab === 'inventory' ? activeSearchFilter : ''}
+                  onOpenEntryModal={handleOpenEntryModal}
                   onOpenCostsModal={handleOpenCostsModal}
                   onOpenSaleModal={handleOpenSaleModal}
                   onOpenReceiptModal={handleOpenPurchaseReceipt}
                   onDeleteVehicle={handleDeleteVehicle}
+                  onReserveVehicle={handleReserveVehicle}
+                  onCancelReservation={handleCancelReservation}
                 />
               )}
 
@@ -327,6 +742,7 @@ export default function App() {
                   owners={owners}
                   sales={sales}
                   store={store}
+                  userRole={userRole}
                   onOpenContractModal={(veh, type) => {
                     if (type === 'compra') {
                       handleOpenPurchaseReceipt(veh);
@@ -334,7 +750,7 @@ export default function App() {
                       handleOpenSaleContract(veh);
                     }
                   }}
-                  onSelectOwner={() => setManagementTab('persons')}
+                  onSelectOwner={() => handleSelectManagementTab('persons')}
                 />
               )}
 
@@ -344,8 +760,10 @@ export default function App() {
                   vehicles={vehicles}
                   sales={sales}
                   store={store}
+                  userRole={userRole}
+                  initialSearchTerm={(managementTab === 'persons' || managementTab === 'owners') ? activeSearchFilter : ''}
                   onSaveOwner={handleSaveOwner}
-                  onSelectVehicleHistory={() => setManagementTab('vehicle_history')}
+                  onSelectVehicleHistory={() => handleSelectManagementTab('vehicle_history')}
                 />
               )}
 
@@ -358,8 +776,10 @@ export default function App() {
                   templates={templates}
                   store={store}
                   initialTab="vendas"
+                  initialSearchTerm={managementTab === 'sales' ? activeSearchFilter : ''}
                   onAddPostSaleCost={handleAddPostSaleCost}
                   onOpenContract={handleOpenSaleContract}
+                  onCancelSale={handleCancelSale}
                 />
               )}
 
@@ -372,8 +792,10 @@ export default function App() {
                   templates={templates}
                   store={store}
                   initialTab="pos-venda"
+                  initialSearchTerm={(managementTab === 'pos-venda' || managementTab === 'post-sale') ? activeSearchFilter : ''}
                   onAddPostSaleCost={handleAddPostSaleCost}
                   onOpenContract={handleOpenSaleContract}
+                  onCancelSale={handleCancelSale}
                 />
               )}
 
@@ -384,10 +806,12 @@ export default function App() {
                   vehicles={vehicles}
                   owners={owners}
                   sales={sales}
+                  userRole={userRole}
                   onOpenContractModal={handleOpenSaleContract}
                   onUpdateTemplate={(t) => {
+                    if (userRole !== 'gestor') return;
                     storageService.saveTemplate(t, activeUserName);
-                    refreshData();
+                    refreshData(true, userRole);
                   }}
                 />
               )}
@@ -397,11 +821,12 @@ export default function App() {
                   sales={sales}
                   vehicles={vehicles}
                   userRole={userRole}
+                  activeSellerId={activeSeller?.id}
                   onAssignCommission={handleAssignCommission}
                 />
               )}
 
-              {managementTab === 'financial' && (
+              {managementTab === 'financial' && userRole === 'gestor' && (
                 <FinancialView
                   sales={sales}
                   vehicles={vehicles}
@@ -410,55 +835,74 @@ export default function App() {
                 />
               )}
 
-              {managementTab === 'audit_logs' && (
+              {managementTab === 'audit_logs' && userRole === 'gestor' && (
                 <AuditLogView />
               )}
 
-              {managementTab === 'settings' && (
+              {managementTab === 'users' && userRole === 'gestor' && (
+                <UsersManagementView
+                  currentUserRole={userRole}
+                  store={store}
+                  initialSearchTerm={managementTab === 'users' ? activeSearchFilter : ''}
+                  onRefreshData={() => refreshData(true, userRole)}
+                />
+              )}
+
+              {managementTab === 'settings' && userRole === 'gestor' && (
                 <SettingsView
                   store={store}
                   financiers={financiers}
                   templates={templates}
                   salespeople={salespeople}
                   onSaveStore={(st) => {
+                    if (userRole !== 'gestor') return;
                     storageService.saveStoreProfile(st, activeUserName);
-                    refreshData();
+                    refreshData(true, userRole);
                   }}
                   onAddFinancier={(f) => {
+                    if (userRole !== 'gestor') return;
                     storageService.addFinancier(f, activeUserName);
-                    refreshData();
+                    refreshData(true, userRole);
                   }}
                   onToggleFinancier={(id) => {
+                    if (userRole !== 'gestor') return;
                     storageService.toggleFinancierStatus(id, activeUserName);
-                    refreshData();
+                    refreshData(true, userRole);
                   }}
                   onDeleteFinancier={(id) => {
+                    if (userRole !== 'gestor') return;
                     storageService.deleteFinancier(id, activeUserName);
-                    refreshData();
+                    refreshData(true, userRole);
                   }}
                   onUpdateFinancier={(f) => {
+                    if (userRole !== 'gestor') return;
                     storageService.saveFinancier(f, activeUserName);
-                    refreshData();
+                    refreshData(true, userRole);
                   }}
                   onSaveTemplate={(t) => {
+                    if (userRole !== 'gestor') return;
                     storageService.saveTemplate(t, activeUserName);
-                    refreshData();
+                    refreshData(true, userRole);
                   }}
                   onAddSalesperson={(sp) => {
+                    if (userRole !== 'gestor') return;
                     storageService.addSalesperson(sp, activeUserName);
-                    refreshData();
+                    refreshData(true, userRole);
                   }}
                   onToggleSalesperson={(id) => {
+                    if (userRole !== 'gestor') return;
                     storageService.toggleSalespersonStatus(id, activeUserName);
-                    refreshData();
+                    refreshData(true, userRole);
                   }}
                   onDeleteSalesperson={(id) => {
+                    if (userRole !== 'gestor') return;
                     storageService.deleteSalesperson(id, activeUserName);
-                    refreshData();
+                    refreshData(true, userRole);
                   }}
                   onUpdateSalesperson={(sp) => {
+                    if (userRole !== 'gestor') return;
                     storageService.saveSalesperson(sp, activeUserName);
-                    refreshData();
+                    refreshData(true, userRole);
                   }}
                 />
               )}
@@ -480,8 +924,8 @@ export default function App() {
         </div>
       )}
 
-      {/* Global Search Modal */}
-      {isGlobalSearchOpen && (
+      {/* Global Search Modal — somente acessível por equipe autenticada */}
+      {isGlobalSearchOpen && isStaffAuthenticated && (
         <GlobalSearchModal
           isOpen={isGlobalSearchOpen}
           onClose={() => setIsGlobalSearchOpen(false)}
@@ -489,12 +933,16 @@ export default function App() {
           owners={owners}
           sales={sales}
           salespeople={salespeople}
+          users={users}
+          financiers={financiers}
+          templates={templates}
+          userRole={userRole}
           onNavigateToTab={handleNavigateFromSearch}
         />
       )}
 
-      {/* MODAL 1: Intake Wizard (Vehicle Entry & Former Owner) */}
-      {isEntryModalOpen && (
+      {/* MODAL 1: Intake Wizard (Vehicle Entry & Former Owner) — exclusivo do Gestor */}
+      {isEntryModalOpen && isStaffAuthenticated && userRole === 'gestor' && (
         <VehicleEntryModal
           isOpen={isEntryModalOpen}
           onClose={() => setIsEntryModalOpen(false)}
@@ -508,8 +956,8 @@ export default function App() {
         />
       )}
 
-      {/* MODAL 2: Patio Costs & Sale Margin Simulator */}
-      {vehicleForCosts && (
+      {/* MODAL 2: Patio Costs & Sale Margin Simulator — exclusivo do Gestor */}
+      {vehicleForCosts && isStaffAuthenticated && userRole === 'gestor' && (
         <VehicleCostsModal
           isOpen={!!vehicleForCosts}
           vehicle={vehicleForCosts}
@@ -519,7 +967,7 @@ export default function App() {
       )}
 
       {/* MODAL 3: Car Sale Wizard */}
-      {vehicleForSale && (
+      {vehicleForSale && isStaffAuthenticated && (
         <VehicleSaleModal
           isOpen={!!vehicleForSale}
           vehicle={vehicleForSale}
@@ -534,8 +982,8 @@ export default function App() {
         />
       )}
 
-      {/* MODAL 4: Contracts and Receipts Viewer/Printer with dynamic variables */}
-      {contractModalData.isOpen && contractModalData.vehicle && (
+      {/* MODAL 4: Visualizador de Contratos e Recibos com variáveis dinâmicas */}
+      {contractModalData.isOpen && contractModalData.vehicle && isStaffAuthenticated && (
         <ContractsAndReceiptsModal
           isOpen={contractModalData.isOpen}
           vehicle={contractModalData.vehicle}
@@ -543,8 +991,21 @@ export default function App() {
           sale={contractModalData.sale}
           templates={templates}
           store={store}
+          userRole={userRole}
           defaultTemplateId={contractModalData.defaultTemplateId}
           onClose={() => setContractModalData({ isOpen: false, vehicle: null })}
+        />
+      )}
+
+      {/* MODAL 5: Authentication & Role Gate Modal */}
+      {isAuthModalOpen && (
+        <AuthModal
+          isOpen={isAuthModalOpen}
+          onClose={() => setIsAuthModalOpen(false)}
+          salespeople={salespeople.length > 0 ? salespeople : storageService.getSalespeople()}
+          store={store}
+          onAuthenticatedUser={handleAuthenticatedUserFromModal}
+          defaultRole={targetAuthRole}
         />
       )}
 

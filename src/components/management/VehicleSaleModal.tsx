@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   X, ShoppingCart, UserCheck, ShieldCheck, AlertTriangle, 
-  DollarSign, FileText, Check, AlertCircle, Building2, CreditCard
+  DollarSign, FileText, Check, AlertCircle, Building2
 } from 'lucide-react';
 import { 
   Vehicle, Sale, Financier, Salesperson, ContractTemplate, 
@@ -9,8 +9,11 @@ import {
 } from '../../types';
 import { 
   formatCurrency, computeAcquisitionCost, 
-  computePatioExpenses, computePreSaleTotalCost, computeMarginPercent 
+  computePatioExpenses, computePreSaleTotalCost, computeMarginPercent,
+  maskCPF, maskPhone, isValidCPF, isValidPhone,
+  toCents, fromCents, roundCurrency, clampNumber, validateSaleFinancials
 } from '../../utils/formatters';
+import { sanitizeInputText } from '../../utils/security';
 
 interface VehicleSaleModalProps {
   vehicle: Vehicle | null;
@@ -21,8 +24,8 @@ interface VehicleSaleModalProps {
   templates: ContractTemplate[];
   userRole: UserRole;
   activeSeller: Salesperson | null;
-  store: StoreProfile;
-  onCompleteSale: (sale: Sale, vehicle: Vehicle) => void;
+  store?: StoreProfile;
+  onCompleteSale: (sale: Sale, vehicle: Vehicle) => boolean | void;
 }
 
 export const VehicleSaleModal: React.FC<VehicleSaleModalProps> = ({
@@ -34,10 +37,13 @@ export const VehicleSaleModal: React.FC<VehicleSaleModalProps> = ({
   templates,
   userRole,
   activeSeller,
-  store,
   onCompleteSale
 }) => {
   const totalVehicleCost = vehicle ? computePreSaleTotalCost(vehicle) : 0;
+  const firstActiveFinancierId =
+    financiers.find(f => f.ativa !== false && f.ativo !== false)?.id || financiers[0]?.id || '';
+  const firstActiveSellerId =
+    salespeople.find(s => s.ativo !== false)?.id || salespeople[0]?.id || '';
 
   // Buyer state
   const [clienteNome, setClienteNome] = useState('');
@@ -47,16 +53,18 @@ export const VehicleSaleModal: React.FC<VehicleSaleModalProps> = ({
 
   // Seller state
   const [vendedorId, setVendedorId] = useState<string>(
-    userRole === 'vendedor' && activeSeller ? activeSeller.id : salespeople[0]?.id || ''
+    userRole === 'vendedor' && activeSeller ? activeSeller.id : firstActiveSellerId
   );
 
   // Financials
-  const [valorVenda, setValorVenda] = useState<number>(vehicle?.valorAnunciado || totalVehicleCost * 1.15);
+  const initialPrice = roundCurrency(vehicle?.valorAnunciado || totalVehicleCost * 1.15);
+  const initialDownPayment = roundCurrency(Math.round(initialPrice * 0.3));
+  const [valorVenda, setValorVenda] = useState<number>(initialPrice);
   const [formaPagamento, setFormaPagamento] = useState<PaymentMethod>('financiamento');
-  const [financiadoraId, setFinanciadoraId] = useState<string>(financiers[0]?.id || '');
-  const [valorEntrada, setValorEntrada] = useState<number>(Math.round((vehicle?.valorAnunciado || totalVehicleCost) * 0.3));
+  const [financiadoraId, setFinanciadoraId] = useState<string>(firstActiveFinancierId);
+  const [valorEntrada, setValorEntrada] = useState<number>(initialDownPayment);
   const [valorFinanciado, setValorFinanciado] = useState<number>(
-    Math.max(0, (vehicle?.valorAnunciado || totalVehicleCost) - Math.round((vehicle?.valorAnunciado || totalVehicleCost) * 0.3))
+    fromCents(Math.max(0, toCents(initialPrice) - toCents(initialDownPayment)))
   );
   const [numeroParcelas, setNumeroParcelas] = useState<number>(48);
 
@@ -73,6 +81,40 @@ export const VehicleSaleModal: React.FC<VehicleSaleModalProps> = ({
   const [comissaoValor, setComissaoValor] = useState<number>(1500);
   const [observacoes, setObservacoes] = useState('');
 
+  // Carro na Troca / Trade-in & Taxas
+  const [veiculoTrocaDescricao, setVeiculoTrocaDescricao] = useState('');
+  const [veiculoTrocaValor, setVeiculoTrocaValor] = useState<number>(0);
+  const [taxaCartaoPercentual, setTaxaCartaoPercentual] = useState<number>(3.99);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Reinicializa estado contábil sempre que um novo veículo é aberto no modal
+  useEffect(() => {
+    if (!isOpen || !vehicle) return;
+    const baseCost = computePreSaleTotalCost(vehicle);
+    const price = roundCurrency(vehicle.valorAnunciado || baseCost * 1.15);
+    const down = roundCurrency(Math.round(price * 0.3));
+    const repasseFlag = vehicle.categoriaComercial === 'repasse';
+
+    setClienteNome('');
+    setClienteCpf('');
+    setClienteTelefone('');
+    setClienteEndereco('');
+    setVendedorId(userRole === 'vendedor' && activeSeller ? activeSeller.id : firstActiveSellerId);
+    setValorVenda(price);
+    setFormaPagamento('financiamento');
+    setFinanciadoraId(firstActiveFinancierId);
+    setValorEntrada(down);
+    setValorFinanciado(fromCents(Math.max(0, toCents(price) - toCents(down))));
+    setNumeroParcelas(48);
+    setVeiculoTrocaDescricao('');
+    setVeiculoTrocaValor(0);
+    setTaxaCartaoPercentual(3.99);
+    setIsRepasse(repasseFlag);
+    setComissaoValor(1500);
+    setObservacoes('');
+    setIsSubmitting(false);
+  }, [isOpen, vehicle?.id]);
+
   // Update contract model if repasse changes
   useEffect(() => {
     const matchingTemplate = templates.find(t => 
@@ -83,86 +125,244 @@ export const VehicleSaleModal: React.FC<VehicleSaleModalProps> = ({
     }
   }, [isRepasse, templates]);
 
-  // Adjust financed amount when price or down payment changes
+  // Adjust financed/card balance automatically in exact centavos when price, down payment, trade-in or method changes
   useEffect(() => {
-    if (formaPagamento === 'financiamento' || formaPagamento === 'misto') {
-      setValorFinanciado(Math.max(0, valorVenda - valorEntrada));
+    const vendaCents = toCents(valorVenda);
+    if (formaPagamento === 'troca') {
+      const entradaCents = toCents(valorEntrada);
+      const trocaCents = toCents(veiculoTrocaValor);
+      setValorFinanciado(fromCents(Math.max(0, vendaCents - entradaCents - trocaCents)));
+    } else if (formaPagamento === 'financiamento' || formaPagamento === 'misto' || formaPagamento === 'cartao_credito') {
+      const entradaCents = toCents(valorEntrada);
+      setValorFinanciado(fromCents(Math.max(0, vendaCents - entradaCents)));
+    } else {
+      setValorFinanciado(0);
     }
-  }, [valorVenda, valorEntrada, formaPagamento]);
+  }, [valorVenda, valorEntrada, veiculoTrocaValor, formaPagamento]);
+
+  const handlePaymentMethodChange = (nextMethod: PaymentMethod) => {
+    setFormaPagamento(nextMethod);
+    const vendaCents = toCents(valorVenda);
+    if (nextMethod === 'cartao_credito') {
+      setValorEntrada(0);
+      setVeiculoTrocaValor(0);
+      setValorFinanciado(fromCents(vendaCents));
+      setNumeroParcelas(12);
+    } else if (nextMethod === 'troca') {
+      const suggestedTroca = roundCurrency(Math.round(fromCents(vendaCents) * 0.4));
+      setVeiculoTrocaValor(suggestedTroca);
+      setValorEntrada(0);
+      setValorFinanciado(fromCents(Math.max(0, vendaCents - toCents(suggestedTroca))));
+      setNumeroParcelas(36);
+    } else if (nextMethod === 'financiamento' || nextMethod === 'misto') {
+      setVeiculoTrocaValor(0);
+      const suggestedDown =
+        toCents(valorEntrada) > 0 && toCents(valorEntrada) < vendaCents
+          ? roundCurrency(valorEntrada)
+          : roundCurrency(Math.round(fromCents(vendaCents) * 0.3));
+      setValorEntrada(suggestedDown);
+      setValorFinanciado(fromCents(Math.max(0, vendaCents - toCents(suggestedDown))));
+      if (numeroParcelas < 12) setNumeroParcelas(48);
+    } else {
+      setValorEntrada(0);
+      setVeiculoTrocaValor(0);
+      setValorFinanciado(0);
+    }
+  };
 
   if (!isOpen || !vehicle) return null;
 
-  // Live Margins
-  const margemBruta = valorVenda - totalVehicleCost;
-  const comissaoFinal = userRole === 'gestor' ? comissaoValor : 0;
-  const margemLiquidaInicial = margemBruta - comissaoFinal;
-  const margemPercentual = computeMarginPercent(valorVenda, totalVehicleCost + comissaoFinal);
+  // Live Margins (exact centavos)
+  const margemBruta = fromCents(toCents(valorVenda) - toCents(totalVehicleCost));
+  const comissaoFinal = userRole === 'gestor' ? roundCurrency(comissaoValor) : 0;
+  const margemLiquidaInicial = fromCents(toCents(margemBruta) - toCents(comissaoFinal));
+  const margemPercentual = computeMarginPercent(
+    roundCurrency(valorVenda),
+    fromCents(toCents(totalVehicleCost) + toCents(comissaoFinal))
+  );
+
+  // Live Financial Equilibrium check (Entrada + Financiamento/Cartão/Troca === Valor Venda)
+  const effectiveAllocatedCents =
+    formaPagamento === 'a_vista_pix'
+      ? toCents(valorVenda)
+      : formaPagamento === 'troca'
+        ? toCents(veiculoTrocaValor) + toCents(valorEntrada) + toCents(valorFinanciado)
+        : toCents(valorEntrada) + toCents(valorFinanciado);
+  const equilibriumDiffCents = toCents(valorVenda) - effectiveAllocatedCents;
+  const isEquilibriumBalanced =
+    toCents(valorVenda) > 0 &&
+    equilibriumDiffCents === 0 &&
+    (formaPagamento === 'a_vista_pix' ||
+      (formaPagamento === 'troca' && toCents(veiculoTrocaValor) > 0) ||
+      (formaPagamento === 'cartao_credito' && toCents(valorFinanciado) > 0) ||
+      (formaPagamento === 'financiamento' && toCents(valorFinanciado) > 0) ||
+      (formaPagamento === 'misto' && toCents(valorEntrada) > 0 && toCents(valorFinanciado) > 0));
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (vehicle.status === 'vendido') {
-      alert('Este veículo já consta como vendido no sistema.');
+    if (isSubmitting) return;
+
+    if (vehicle.status !== 'em_estoque' && vehicle.status !== 'reservado') {
+      alert('Este veículo já consta como vendido ou indisponível no sistema.');
       return;
     }
 
-    if (!clienteNome || !clienteCpf || !clienteEndereco) {
+    if (!clienteNome.trim() || !clienteCpf.trim() || !clienteEndereco.trim()) {
       alert('Por favor, preencha os dados cadastrais do cliente comprador (Nome, CPF e Endereço).');
       return;
     }
 
-    if (isNaN(valorVenda) || valorVenda <= 0) {
-      alert('Informe um valor de venda válido.');
+    if (clienteNome.trim().length < 3) {
+      alert('Informe o nome completo válido do cliente comprador (mínimo de 3 caracteres).');
       return;
     }
 
-    if (formaPagamento === 'financiamento' || formaPagamento === 'misto') {
-      if (isNaN(valorEntrada) || valorEntrada < 0) {
+    if (!isValidCPF(clienteCpf)) {
+      alert('Por favor, informe um CPF válido com 11 dígitos para o cliente comprador.');
+      return;
+    }
+
+    if (!clienteTelefone.trim() || !isValidPhone(clienteTelefone)) {
+      alert('Por favor, informe um número de WhatsApp válido com DDD (10 ou 11 dígitos) para o comprador.');
+      return;
+    }
+
+    if (clienteEndereco.trim().length < 5) {
+      alert('Informe o endereço residencial completo do comprador (rua, número, bairro e cidade).');
+      return;
+    }
+
+    if (isNaN(valorVenda) || !Number.isFinite(valorVenda) || toCents(valorVenda) < 10000 || valorVenda > 50_000_000) {
+      alert('Informe um valor de venda válido (mínimo de R$ 100,00).');
+      return;
+    }
+
+    if (formaPagamento === 'troca') {
+      if (!veiculoTrocaDescricao.trim() || veiculoTrocaDescricao.trim().length < 4) {
+        alert('Informe a descrição do veículo recebido na troca (Ex: Fiat Uno 2017 Branco - Placa QFA1234).');
+        return;
+      }
+      if (toCents(veiculoTrocaValor) <= 0) {
+        alert('Informe um valor de avaliação válido para o veículo recebido na troca.');
+        return;
+      }
+    }
+
+    if (userRole === 'gestor') {
+      if (isNaN(comissaoValor) || !Number.isFinite(comissaoValor) || toCents(comissaoValor) < 0) {
+        alert('O valor da comissão não pode ser negativo.');
+        return;
+      }
+      if (toCents(comissaoValor) > toCents(valorVenda)) {
+        alert('O valor da comissão não pode ser superior ao valor total da venda.');
+        return;
+      }
+    }
+
+    const usesFinancier = formaPagamento === 'financiamento' || formaPagamento === 'misto' || (formaPagamento === 'troca' && toCents(valorFinanciado) > 0);
+    const financierObj = financiers.find(f => f.id === financiadoraId);
+
+    if (usesFinancier) {
+      if (!financierObj || financierObj.ativa === false || financierObj.ativo === false) {
+        alert('Selecione uma instituição financeira credenciada e ativa para concluir o financiamento.');
+        return;
+      }
+      if (isNaN(valorEntrada) || toCents(valorEntrada) < 0) {
         alert('Informe um valor de entrada válido.');
         return;
       }
-      if (valorEntrada > valorVenda) {
+      if (toCents(valorEntrada) > toCents(valorVenda)) {
         alert('O valor da entrada não pode ser superior ao valor da venda.');
         return;
       }
     }
 
-    const sellerObj = salespeople.find(s => s.id === vendedorId) || salespeople[0];
+    const sellerObj =
+      userRole === 'vendedor' && activeSeller
+        ? activeSeller
+        : salespeople.find(s => s.id === vendedorId) || salespeople[0];
     const contractObj = templates.find(t => t.id === tipoContratoId) || defaultContractTemplate;
-    const financierObj = financiers.find(f => f.id === financiadoraId);
 
-    const isPendingCommission = userRole === 'vendedor';
+    if (
+      (isRepasse && contractObj?.tipo === 'garantia') ||
+      (!isRepasse && contractObj?.tipo === 'repasse')
+    ) {
+      alert(
+        'Conflito Jurídico: A minuta contratual selecionada não corresponde à modalidade de garantia acordada (Garantia Legal 90D vs Repasse Sem Garantia).'
+      );
+      return;
+    }
 
-    const newSale: Sale = {
+    const isPendingCommission = userRole !== 'gestor';
+    const safeClienteNome = sanitizeInputText(clienteNome);
+    const safeClienteCpf = sanitizeInputText(maskCPF(clienteCpf));
+    const safeClienteTelefone = sanitizeInputText(maskPhone(clienteTelefone));
+    const safeClienteEndereco = sanitizeInputText(clienteEndereco);
+    const safeObservacoes = sanitizeInputText(observacoes, true);
+
+    const taxaCartaoValor =
+      formaPagamento === 'cartao_credito' && taxaCartaoPercentual > 0
+        ? roundCurrency((Number(valorFinanciado) * taxaCartaoPercentual) / 100)
+        : undefined;
+
+    const candidateSale: Sale = {
       id: 'sale_' + Date.now(),
       veiculoId: vehicle.id,
       dataVenda: new Date().toISOString(),
-      clienteNome,
-      clienteCpf,
-      clienteTelefone: clienteTelefone || '(11) 90000-0000',
-      clienteEndereco,
+      clienteNome: safeClienteNome,
+      clienteCpf: safeClienteCpf,
+      clienteTelefone: safeClienteTelefone,
+      clienteEndereco: safeClienteEndereco,
       vendedorId: sellerObj.id,
       vendedorNome: sellerObj.nome,
-      valorVenda: Number(valorVenda),
+      valorVenda: roundCurrency(valorVenda),
       formaPagamento,
-      financiadoraId: formaPagamento === 'financiamento' ? financierObj?.id : undefined,
-      financiadoraNome: formaPagamento === 'financiamento' ? financierObj?.nome : undefined,
-      valorEntrada: (formaPagamento === 'financiamento' || formaPagamento === 'misto') ? Number(valorEntrada) : undefined,
-      valorFinanciado: (formaPagamento === 'financiamento' || formaPagamento === 'misto') ? Number(valorFinanciado) : undefined,
-      numeroParcelas: (formaPagamento === 'financiamento') ? Number(numeroParcelas) : undefined,
+      financiadoraId: usesFinancier ? financierObj?.id : undefined,
+      financiadoraNome: usesFinancier ? financierObj?.nome : undefined,
+      valorEntrada:
+        usesFinancier || formaPagamento === 'troca'
+          ? roundCurrency(valorEntrada)
+          : formaPagamento === 'cartao_credito' && toCents(valorEntrada) > 0
+            ? roundCurrency(valorEntrada)
+            : undefined,
+      valorFinanciado:
+        usesFinancier || formaPagamento === 'troca'
+          ? roundCurrency(valorFinanciado)
+          : formaPagamento === 'cartao_credito' && toCents(valorEntrada) > 0
+            ? roundCurrency(valorFinanciado)
+            : undefined,
+      numeroParcelas:
+        usesFinancier || formaPagamento === 'cartao_credito' || formaPagamento === 'troca' ? Number(numeroParcelas) : undefined,
+      veiculoTrocaDescricao: formaPagamento === 'troca' ? sanitizeInputText(veiculoTrocaDescricao) : undefined,
+      veiculoTrocaValor: formaPagamento === 'troca' ? roundCurrency(veiculoTrocaValor) : undefined,
+      taxaCartaoPercentual: formaPagamento === 'cartao_credito' ? Number(taxaCartaoPercentual) : undefined,
+      taxaCartaoValor,
+      statusVenda: 'concluida',
       tipoContratoId: contractObj.id,
       tipoContratoNome: contractObj.titulo,
       isRepasseSemGarantia: isRepasse,
-      comissaoValor: isPendingCommission ? 0 : Number(comissaoValor),
+      comissaoValor: isPendingCommission ? 0 : roundCurrency(Math.max(0, Number(comissaoValor) || 0)),
       comissaoPendente: isPendingCommission,
       comissaoDefinidaPor: isPendingCommission ? undefined : 'Gestor Geral',
       dataDefinicaoComissao: isPendingCommission ? undefined : new Date().toISOString(),
       custosPosVenda: [],
-      observacoes
+      observacoes: safeObservacoes
     };
 
-    onCompleteSale(newSale, vehicle);
-    onClose();
+    const validation = validateSaleFinancials(candidateSale);
+    if (!validation.valid) {
+      alert(validation.error || 'Verifique o equilíbrio financeiro entre Entrada, Parcelamento e Valor Total.');
+      return;
+    }
+
+    setIsSubmitting(true);
+    const completed = onCompleteSale(candidateSale, vehicle);
+    if (completed !== false) {
+      onClose();
+    } else {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -192,7 +392,7 @@ export const VehicleSaleModal: React.FC<VehicleSaleModalProps> = ({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 max-h-[80vh] overflow-y-auto space-y-6 flex-1">
+        <form onSubmit={handleSubmit} className="p-4 sm:p-6 max-h-[80vh] overflow-y-auto space-y-6 flex-1">
           
           {/* VEHICLE SUMMARY & EXACT COST AUDIT */}
           <div className="bg-neutral-950 p-4 rounded-xl border border-neutral-800">
@@ -207,16 +407,28 @@ export const VehicleSaleModal: React.FC<VehicleSaleModalProps> = ({
                 </span>
               </div>
 
-              {/* Exact Cost Breakdown */}
-              <div className="bg-neutral-900 p-3 rounded-lg border border-neutral-800 text-right">
-                <span className="text-[10px] text-neutral-400 uppercase tracking-wider block">Custo Total Loja</span>
-                <span className="text-base font-bold text-amber-400 font-display">
-                  {formatCurrency(totalVehicleCost)}
-                </span>
-                <span className="text-[10px] text-neutral-500 block">
-                  Compra ({formatCurrency(computeAcquisitionCost(vehicle))}) + Pátio ({formatCurrency(computePatioExpenses(vehicle))})
-                </span>
-              </div>
+              {/* Exact Cost Breakdown (Exclusivo Gestor) ou Preço de Tabela (Vendedor) */}
+              {userRole === 'gestor' ? (
+                <div className="bg-neutral-900 p-3 rounded-lg border border-neutral-800 text-right">
+                  <span className="text-[10px] text-neutral-400 uppercase tracking-wider block">Custo Total Loja</span>
+                  <span className="text-base font-bold text-amber-400 font-display">
+                    {formatCurrency(totalVehicleCost)}
+                  </span>
+                  <span className="text-[10px] text-neutral-500 block">
+                    Compra ({formatCurrency(computeAcquisitionCost(vehicle))}) + Pátio ({formatCurrency(computePatioExpenses(vehicle))})
+                  </span>
+                </div>
+              ) : (
+                <div className="bg-neutral-900 p-3 rounded-lg border border-neutral-800 text-right">
+                  <span className="text-[10px] text-neutral-400 uppercase tracking-wider block">Preço Anunciado</span>
+                  <span className="text-base font-bold text-emerald-400 font-display">
+                    {formatCurrency(vehicle.valorAnunciado)}
+                  </span>
+                  <span className="text-[10px] text-neutral-500 block">
+                    Valor sugerido de vitrine
+                  </span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -233,6 +445,7 @@ export const VehicleSaleModal: React.FC<VehicleSaleModalProps> = ({
                 <input
                   type="text"
                   required
+                  maxLength={120}
                   value={clienteNome}
                   onChange={(e) => setClienteNome(e.target.value)}
                   placeholder="Ex: Dr. Roberto Guimarães"
@@ -245,21 +458,24 @@ export const VehicleSaleModal: React.FC<VehicleSaleModalProps> = ({
                 <input
                   type="text"
                   required
+                  maxLength={14}
                   value={clienteCpf}
-                  onChange={(e) => setClienteCpf(e.target.value)}
+                  onChange={(e) => setClienteCpf(maskCPF(e.target.value))}
                   placeholder="000.000.000-00"
-                  className="w-full bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 text-xs text-white focus:border-amber-500 focus:outline-none"
+                  className="w-full bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 text-xs text-white focus:border-amber-500 focus:outline-none font-mono"
                 />
               </div>
 
               <div>
-                <label className="text-xs text-neutral-400 block mb-1">Telefone / WhatsApp</label>
+                <label className="text-xs text-neutral-400 block mb-1">WhatsApp *</label>
                 <input
                   type="text"
+                  required
+                  maxLength={15}
                   value={clienteTelefone}
-                  onChange={(e) => setClienteTelefone(e.target.value)}
-                  placeholder="(11) 98888-7777"
-                  className="w-full bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 text-xs text-white focus:border-amber-500 focus:outline-none"
+                  onChange={(e) => setClienteTelefone(maskPhone(e.target.value))}
+                  placeholder="(83) 98765-4321"
+                  className="w-full bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 text-xs text-white focus:border-amber-500 focus:outline-none font-mono"
                 />
               </div>
 
@@ -268,6 +484,7 @@ export const VehicleSaleModal: React.FC<VehicleSaleModalProps> = ({
                 <input
                   type="text"
                   required
+                  maxLength={220}
                   value={clienteEndereco}
                   onChange={(e) => setClienteEndereco(e.target.value)}
                   placeholder="Rua, número, bairro, cidade - UF"
@@ -311,11 +528,12 @@ export const VehicleSaleModal: React.FC<VehicleSaleModalProps> = ({
                 <input
                   type="number"
                   required
-                  min={1}
-                  step={500}
-                  value={valorVenda}
-                  onChange={(e) => setValorVenda(Number(e.target.value))}
-                  className="w-full bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 text-sm font-bold text-emerald-400 focus:border-amber-500 focus:outline-none"
+                  min={0.01}
+                  max={50000000}
+                  step="0.01"
+                  value={valorVenda || ''}
+                  onChange={(e) => setValorVenda(roundCurrency(clampNumber(e.target.value, 0, 50_000_000, 0)))}
+                  className="w-full bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 text-sm font-bold text-emerald-400 focus:border-amber-500 focus:outline-none tabular-nums"
                 />
               </div>
 
@@ -323,18 +541,19 @@ export const VehicleSaleModal: React.FC<VehicleSaleModalProps> = ({
                 <label className="text-xs text-neutral-400 block mb-1">Forma de Pagamento</label>
                 <select
                   value={formaPagamento}
-                  onChange={(e) => setFormaPagamento(e.target.value as PaymentMethod)}
+                  onChange={(e) => handlePaymentMethodChange(e.target.value as PaymentMethod)}
                   className="w-full bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 text-xs text-white focus:border-amber-500 focus:outline-none"
                 >
                   <option value="financiamento">Financiamento Bancário</option>
-                  <option value="a_vista_pix">À Vista (Pix / TED)</option>
+                  <option value="a_vista_pix">À Vista (Pix)</option>
                   <option value="cartao_credito">Cartão de Crédito</option>
-                  <option value="misto">Misto (Entrada + Financiamento / Cartão)</option>
+                  <option value="misto">Misto (Entrada + Financiamento)</option>
+                  <option value="troca">Troca com Torna (Carro na Troca + Saldo)</option>
                 </select>
               </div>
             </div>
 
-            {/* If Financiamento */}
+            {/* If Financiamento or Misto */}
             {(formaPagamento === 'financiamento' || formaPagamento === 'misto') && (
               <div className="bg-neutral-900 p-3.5 rounded-xl border border-neutral-800 grid grid-cols-1 sm:grid-cols-4 gap-3">
                 <div className="sm:col-span-2">
@@ -359,14 +578,17 @@ export const VehicleSaleModal: React.FC<VehicleSaleModalProps> = ({
                 </div>
 
                 <div>
-                  <label className="text-xs text-neutral-400 block mb-1">Valor de Entrada (R$)</label>
+                  <label className="text-xs text-neutral-400 block mb-1">
+                    Valor de Entrada (R$){formaPagamento === 'misto' ? ' *' : ''}
+                  </label>
                   <input
                     type="number"
                     min={0}
-                    step={500}
+                    max={50000000}
+                    step="0.01"
                     value={valorEntrada}
-                    onChange={(e) => setValorEntrada(Number(e.target.value))}
-                    className="w-full bg-neutral-950 border border-neutral-700 rounded-lg px-3 py-2 text-xs text-white focus:border-amber-500 focus:outline-none"
+                    onChange={(e) => setValorEntrada(roundCurrency(clampNumber(e.target.value, 0, 50_000_000, 0)))}
+                    className="w-full bg-neutral-950 border border-neutral-700 rounded-lg px-3 py-2 text-xs text-white focus:border-amber-500 focus:outline-none tabular-nums"
                   />
                 </div>
 
@@ -385,43 +607,260 @@ export const VehicleSaleModal: React.FC<VehicleSaleModalProps> = ({
                   </select>
                 </div>
 
-                <div className="sm:col-span-4 text-[11px] text-neutral-400 bg-neutral-950 p-2 rounded-lg border border-neutral-800 flex justify-between items-center">
-                  <span>Valor Financiado pela Instituição: <strong className="text-amber-400">{formatCurrency(valorFinanciado)}</strong></span>
-                  <span>{numeroParcelas}x fixas</span>
+                <div className="sm:col-span-4 text-[11px] text-neutral-400 bg-neutral-950 p-2 rounded-lg border border-neutral-800 flex flex-wrap justify-between items-center gap-2">
+                  <span>
+                    Entrada: <strong className="text-white">{formatCurrency(valorEntrada)}</strong> + Valor Financiado:{' '}
+                    <strong className="text-amber-400">{formatCurrency(valorFinanciado)}</strong>
+                  </span>
+                  <span>{numeroParcelas}x fixas ({formatCurrency(roundCurrency(valorFinanciado / Math.max(1, numeroParcelas)))}/mês s/ juros)</span>
                 </div>
               </div>
             )}
 
-            {/* LIVE MARGIN AUDIT (Vendedor and Gestor view) */}
-            <div className="bg-neutral-900/90 p-4 rounded-xl border border-neutral-800">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-bold text-white uppercase tracking-wider">
-                  Margem Real da Transação (Contando todos os custos)
-                </span>
-                <span className="text-xs text-emerald-400 font-bold">
-                  Margem Líquida Prevista: {formatCurrency(margemLiquidaInicial)} ({margemPercentual.toFixed(1)}%)
-                </span>
-              </div>
+            {/* If Cartão de Crédito */}
+            {formaPagamento === 'cartao_credito' && (
+              <div className="bg-neutral-900 p-3.5 rounded-xl border border-neutral-800 grid grid-cols-1 sm:grid-cols-4 gap-3">
+                <div>
+                  <label className="text-xs text-neutral-400 block mb-1">Entrada à Vista Opcional (R$)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={50000000}
+                    step="0.01"
+                    value={valorEntrada}
+                    onChange={(e) => setValorEntrada(roundCurrency(clampNumber(e.target.value, 0, 50_000_000, 0)))}
+                    className="w-full bg-neutral-950 border border-neutral-700 rounded-lg px-3 py-2 text-xs text-white focus:border-amber-500 focus:outline-none tabular-nums"
+                  />
+                </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs pt-2 border-t border-neutral-800 text-neutral-400">
                 <div>
-                  <span className="text-[10px] block">Valor da Venda</span>
-                  <span className="text-white font-bold">{formatCurrency(valorVenda)}</span>
+                  <label className="text-xs text-neutral-400 block mb-1">Saldo no Cartão</label>
+                  <div className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-2 text-xs font-bold text-amber-400 tabular-nums">
+                    {formatCurrency(valorFinanciado)}
+                  </div>
                 </div>
+
                 <div>
-                  <span className="text-[10px] block">(-) Custo Total Veículo</span>
-                  <span className="text-red-400 font-semibold">{formatCurrency(totalVehicleCost)}</span>
+                  <label className="text-xs text-neutral-400 block mb-1">Parcelas no Cartão</label>
+                  <select
+                    value={numeroParcelas}
+                    onChange={(e) => setNumeroParcelas(Number(e.target.value))}
+                    className="w-full bg-neutral-950 border border-neutral-700 rounded-lg px-3 py-2 text-xs text-white focus:border-amber-500 focus:outline-none"
+                  >
+                    {[1, 2, 3, 4, 6, 8, 10, 12, 18].map(p => (
+                      <option key={p} value={p}>
+                        {p}x ({formatCurrency(roundCurrency(valorFinanciado / p))}/parc)
+                      </option>
+                    ))}
+                  </select>
                 </div>
+
                 <div>
-                  <span className="text-[10px] block">(=) Margem Bruta</span>
-                  <span className="text-amber-400 font-bold">{formatCurrency(margemBruta)}</span>
+                  <label className="text-xs text-neutral-400 block mb-1">Taxa Maquininha (%)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={30}
+                    step="0.01"
+                    value={taxaCartaoPercentual || ''}
+                    placeholder="Ex: 2.99"
+                    onChange={(e) => setTaxaCartaoPercentual(clampNumber(e.target.value, 0, 30, 0))}
+                    className="w-full bg-neutral-950 border border-neutral-700 rounded-lg px-3 py-2 text-xs text-white focus:border-amber-500 focus:outline-none tabular-nums"
+                  />
                 </div>
-                <div>
-                  <span className="text-[10px] block">(-) Comissão Loja</span>
-                  <span className="text-neutral-300 font-semibold">{formatCurrency(comissaoFinal)}</span>
+
+                {taxaCartaoPercentual > 0 && (
+                  <div className="sm:col-span-4 text-[11px] text-amber-300 bg-amber-950/30 p-2 rounded-lg border border-amber-800/40 flex justify-between items-center">
+                    <span>
+                      Custo Maquininha/MDR ({taxaCartaoPercentual}%): <strong>-{formatCurrency(roundCurrency((valorFinanciado * taxaCartaoPercentual) / 100))}</strong>
+                    </span>
+                    <span>
+                      Repasse Líquido à Loja: <strong className="text-emerald-400">{formatCurrency(roundCurrency(valorFinanciado * (1 - taxaCartaoPercentual / 100)))}</strong>
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* If Troca com Torna */}
+            {formaPagamento === 'troca' && (
+              <div className="bg-neutral-900 p-3.5 rounded-xl border border-neutral-800 space-y-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs text-neutral-400 block mb-1">
+                      Veículo Recebido na Troca (Descrição / Modelo / Placa) *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Ex: Fiat Uno 1.0 Fire 2017 - Placa QFA1234"
+                      value={veiculoTrocaDescricao}
+                      onChange={(e) => setVeiculoTrocaDescricao(e.target.value)}
+                      className="w-full bg-neutral-950 border border-neutral-700 rounded-lg px-3 py-2 text-xs text-white focus:border-amber-500 focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-xs text-neutral-400 block mb-1">
+                      Valor de Avaliação do Carro na Troca (R$) *
+                    </label>
+                    <input
+                      type="number"
+                      required
+                      min={0.01}
+                      max={50000000}
+                      step="0.01"
+                      value={veiculoTrocaValor || ''}
+                      onChange={(e) => {
+                        const val = roundCurrency(clampNumber(e.target.value, 0, 50_000_000, 0));
+                        setVeiculoTrocaValor(val);
+                        const rest = Math.max(0, toCents(valorVenda) - toCents(val) - toCents(valorEntrada));
+                        setValorFinanciado(fromCents(rest));
+                      }}
+                      className="w-full bg-neutral-950 border border-neutral-700 rounded-lg px-3 py-2 text-sm font-bold text-amber-400 focus:border-amber-500 focus:outline-none tabular-nums"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-neutral-800">
+                  <div>
+                    <label className="text-xs text-neutral-400 block mb-1">
+                      Entrada Complementar (Pix/Dinheiro) (R$)
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={50000000}
+                      step="0.01"
+                      value={valorEntrada}
+                      onChange={(e) => {
+                        const val = roundCurrency(clampNumber(e.target.value, 0, 50_000_000, 0));
+                        setValorEntrada(val);
+                        const rest = Math.max(0, toCents(valorVenda) - toCents(veiculoTrocaValor) - toCents(val));
+                        setValorFinanciado(fromCents(rest));
+                      }}
+                      className="w-full bg-neutral-950 border border-neutral-700 rounded-lg px-3 py-2 text-xs text-white focus:border-amber-500 focus:outline-none tabular-nums"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-xs text-neutral-400 block mb-1">
+                      Saldo Financiado / Parcelado (R$)
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={50000000}
+                      step="0.01"
+                      value={valorFinanciado}
+                      onChange={(e) => setValorFinanciado(roundCurrency(clampNumber(e.target.value, 0, 50_000_000, 0)))}
+                      className="w-full bg-neutral-950 border border-neutral-700 rounded-lg px-3 py-2 text-xs text-white focus:border-amber-500 focus:outline-none tabular-nums"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-xs text-neutral-400 block mb-1">Financiadora (se houver saldo)</label>
+                    <select
+                      value={financiadoraId}
+                      onChange={(e) => setFinanciadoraId(e.target.value)}
+                      disabled={toCents(valorFinanciado) <= 0}
+                      className="w-full bg-neutral-950 border border-neutral-700 rounded-lg px-3 py-2 text-xs text-white focus:border-amber-500 focus:outline-none disabled:opacity-50"
+                    >
+                      {financiers.map(f => (
+                        <option key={f.id} value={f.id}>
+                          {f.nome}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="text-[11px] text-neutral-400 bg-neutral-950 p-2 rounded-lg border border-neutral-800 flex flex-wrap justify-between items-center gap-2">
+                  <span>
+                    Carro Troca: <strong className="text-amber-400">{formatCurrency(veiculoTrocaValor)}</strong> + Entrada: <strong className="text-white">{formatCurrency(valorEntrada)}</strong> + Financiado: <strong className="text-blue-400">{formatCurrency(valorFinanciado)}</strong>
+                  </span>
+                  <span>Total Coberto: <strong>{formatCurrency(roundCurrency(veiculoTrocaValor + valorEntrada + valorFinanciado))}</strong></span>
                 </div>
               </div>
+            )}
+
+            {/* INDICADOR DE EQUILÍBRIO FINANCEIRO DA VENDA */}
+            <div
+              className={`p-2.5 rounded-lg border text-[11px] flex flex-col sm:flex-row sm:items-center justify-between gap-2 ${
+                isEquilibriumBalanced
+                  ? 'bg-emerald-950/30 border-emerald-800/50 text-emerald-300'
+                  : 'bg-red-950/40 border-red-800/60 text-red-300'
+              }`}
+            >
+              <span className="font-semibold">
+                {isEquilibriumBalanced
+                  ? 'Equilíbrio Contábil Verificado (Sem Sobras Órfãs):'
+                  : 'Atenção: Desequilíbrio na Composição de Pagamento:'}
+              </span>
+              <span className="font-mono">
+                {formaPagamento === 'a_vista_pix' ? (
+                  <>À Vista Integral = {formatCurrency(valorVenda)} (Diferença: R$ 0,00)</>
+                ) : formaPagamento === 'troca' ? (
+                  <>
+                    Carro Troca ({formatCurrency(veiculoTrocaValor)}) + Entrada ({formatCurrency(valorEntrada)}) + Saldo ({formatCurrency(valorFinanciado)}) ={' '}
+                    <strong>{formatCurrency(fromCents(effectiveAllocatedCents))}</strong>
+                    {equilibriumDiffCents !== 0 && ` (Diferença: ${formatCurrency(fromCents(Math.abs(equilibriumDiffCents)))})`}
+                  </>
+                ) : (
+                  <>
+                    Entrada ({formatCurrency(valorEntrada)}) +{' '}
+                    {formaPagamento === 'cartao_credito' ? 'Cartão' : 'Financiado'} ({formatCurrency(valorFinanciado)}) ={' '}
+                    <strong>{formatCurrency(fromCents(effectiveAllocatedCents))}</strong>
+                    {equilibriumDiffCents !== 0 && ` (Diferença: ${formatCurrency(fromCents(Math.abs(equilibriumDiffCents)))})`}
+                  </>
+                )}
+              </span>
             </div>
+
+            {/* LIVE MARGIN AUDIT (Exclusivo Gestor — oculta custo de aquisição e margem real para Vendedor) */}
+            {userRole === 'gestor' && (
+              <div className="bg-neutral-900/90 p-4 rounded-xl border border-neutral-800 space-y-2.5">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                  <span className="text-xs font-bold text-white uppercase tracking-wider">
+                    Margem Real da Transação (Contando todos os custos)
+                  </span>
+                  <span className={`text-xs font-bold ${margemLiquidaInicial >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                    Margem Líquida Prevista: {formatCurrency(margemLiquidaInicial)} ({margemPercentual.toFixed(1)}%)
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs pt-2 border-t border-neutral-800 text-neutral-400">
+                  <div>
+                    <span className="text-[10px] block">Valor da Venda</span>
+                    <span className="text-white font-bold tabular-nums">{formatCurrency(valorVenda)}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] block">(-) Custo Total Veículo</span>
+                    <span className="text-red-400 font-semibold tabular-nums">{formatCurrency(totalVehicleCost)}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] block">(=) Margem Bruta</span>
+                    <span className={`font-bold tabular-nums ${margemBruta >= 0 ? 'text-amber-400' : 'text-red-400'}`}>
+                      {formatCurrency(margemBruta)}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] block">(-) Comissão Loja</span>
+                    <span className="text-neutral-300 font-semibold tabular-nums">{formatCurrency(comissaoFinal)}</span>
+                  </div>
+                </div>
+
+                {margemLiquidaInicial < 0 && (
+                  <div className="p-2.5 rounded-lg bg-red-950/50 border border-red-800/60 text-[11px] text-red-200 flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
+                    <span>
+                      <strong>Alerta de Venda com Prejuízo (Liquidação):</strong> O preço fechado está abaixo do custo investido somado à comissão, resultando em margem negativa de{' '}
+                      <strong>{formatCurrency(margemLiquidaInicial)} ({margemPercentual.toFixed(1)}%)</strong>.
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* SECTION 3: REPASSE VS GARANTIA & SELEÇÃO DE CONTRATO */}
@@ -467,15 +906,63 @@ export const VehicleSaleModal: React.FC<VehicleSaleModalProps> = ({
                 <label className="text-xs text-neutral-400 block mb-1">Modelo de Contrato a ser Gerado:</label>
                 <select
                   value={tipoContratoId}
-                  onChange={(e) => setTipoContratoId(e.target.value)}
+                  onChange={(e) => {
+                    const nextId = e.target.value;
+                    setTipoContratoId(nextId);
+                    const chosen = templates.find(t => t.id === nextId);
+                    if (chosen?.tipo === 'repasse') setIsRepasse(true);
+                    else if (chosen?.tipo === 'garantia') setIsRepasse(false);
+                  }}
                   className="w-full bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 text-xs text-white focus:border-amber-500 focus:outline-none"
                 >
-                  {templates.filter(t => t.tipo === 'garantia' || t.tipo === 'repasse').map(t => (
+                  {(templates.some(t => t.tipo === (isRepasse ? 'repasse' : 'garantia'))
+                    ? templates.filter(t => t.tipo === (isRepasse ? 'repasse' : 'garantia'))
+                    : templates.filter(t => t.tipo === 'garantia' || t.tipo === 'repasse')
+                  ).map(t => (
                     <option key={t.id} value={t.id}>
                       {t.titulo}
                     </option>
                   ))}
                 </select>
+              </div>
+
+              <div className="sm:col-span-2">
+                <div
+                  className={`p-2.5 rounded-lg border text-[11px] flex items-start gap-2 ${
+                    isRepasse
+                      ? 'bg-amber-950/35 border-amber-800/60 text-amber-200'
+                      : 'bg-emerald-950/35 border-emerald-800/60 text-emerald-200'
+                  }`}
+                >
+                  {isRepasse ? (
+                    <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                  ) : (
+                    <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                  )}
+                  <span>
+                    {isRepasse ? (
+                      <>
+                        <strong>Regime Jurídico — Repasse Comercial (Sem Garantia / No Estado):</strong> Conforme Arts. 24 e 51, I do CDC, a isenção de garantia mecânica possui eficácia jurídica comprovada em operações comerciais/B2B ou com expressa ciência respaldada em Laudo Cautelar prévio detalhando avarias e deságio proporcional do preço. É fundamental emitir o contrato de repasse específico e anexar laudo cautelar.
+                      </>
+                    ) : (
+                      <>
+                        <strong>Regime Jurídico — Garantia Legal de 90 Dias (Art. 26, II CDC):</strong> Cobertura legal de 90 dias restrita a componentes internos de <strong>motor e câmbio</strong>, excluídos itens de desgaste natural ou mau uso comprovado.
+                      </>
+                    )}
+                  </span>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs text-neutral-400 block mb-1">Observações da Venda</label>
+                <textarea
+                  rows={2}
+                  maxLength={500}
+                  value={observacoes}
+                  onChange={(e) => setObservacoes(e.target.value)}
+                  placeholder="Notas adicionais sobre a negociação comercial, garantia, etc."
+                  className="w-full bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 text-xs text-white focus:border-amber-500 focus:outline-none resize-none"
+                />
               </div>
             </div>
           </div>
@@ -504,15 +991,19 @@ export const VehicleSaleModal: React.FC<VehicleSaleModalProps> = ({
                     <input
                       type="number"
                       min={0}
-                      step={50}
+                      max={1000000}
+                      step="0.01"
                       value={comissaoValor}
-                      onChange={(e) => setComissaoValor(Number(e.target.value))}
-                      className="w-full bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 text-sm font-bold text-amber-400 focus:border-amber-500 focus:outline-none"
+                      onChange={(e) => setComissaoValor(roundCurrency(clampNumber(e.target.value, 0, 1_000_000, 0)))}
+                      className="w-full bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 text-sm font-bold text-amber-400 focus:border-amber-500 focus:outline-none tabular-nums"
                     />
                   </div>
                   <div className="text-xs text-neutral-400 bg-neutral-900 p-2.5 rounded-lg border border-neutral-800 flex items-center">
                     <span>
-                      Lucro Líquido final da loja após dedução da comissão: <strong className="text-emerald-400">{formatCurrency(margemLiquidaInicial)}</strong>
+                      Lucro Líquido final da loja após dedução da comissão:{' '}
+                      <strong className={`tabular-nums ${margemLiquidaInicial >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {formatCurrency(margemLiquidaInicial)}
+                      </strong>
                     </span>
                   </div>
                 </div>
@@ -538,16 +1029,18 @@ export const VehicleSaleModal: React.FC<VehicleSaleModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 rounded-[8px] bg-[#202024] hover:bg-[#2D2D32] border border-[#2D2D32] text-xs font-semibold text-[#CAC9CA] transition-colors cursor-pointer"
+              disabled={isSubmitting}
+              className="px-4 py-2 rounded-[8px] bg-[#202024] hover:bg-[#2D2D32] border border-[#2D2D32] text-xs font-semibold text-[#CAC9CA] transition-colors cursor-pointer disabled:opacity-50"
             >
               Cancelar
             </button>
             <button
               type="submit"
-              className="px-5 py-2.5 rounded-[8px] bg-[#D4130D] hover:bg-[#E3271F] text-white text-xs font-bold flex items-center gap-2 shadow-sm transition-all cursor-pointer"
+              disabled={isSubmitting || !isEquilibriumBalanced}
+              className="px-5 py-2.5 rounded-[8px] bg-[#D4130D] hover:bg-[#E3271F] disabled:bg-neutral-800 disabled:text-neutral-500 disabled:border-neutral-700 disabled:cursor-not-allowed text-white text-xs font-bold flex items-center gap-2 shadow-sm transition-all cursor-pointer"
             >
               <Check className="w-4 h-4 stroke-[2.5]" />
-              Concluir Venda & Gerar Contrato
+              {isSubmitting ? 'Processando Venda...' : 'Concluir Venda & Gerar Contrato'}
             </button>
           </div>
 

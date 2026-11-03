@@ -17,6 +17,8 @@ export interface FormerOwner {
   observacoes?: string;
   criadoEm?: string;
   dataCadastro?: string;
+  version?: number;
+  atualizadoEm?: string;
 }
 
 export interface DetranDebt {
@@ -79,11 +81,21 @@ export interface Vehicle {
   descricaoDestaques?: string[];
   dataVenda?: string;
   
+  // Reserva de veículo
+  dataReserva?: string;
+  reservadoAte?: string;
+  reservadoPara?: string;
+  valorSinalReserva?: number;
+  
   // Custos acumulados de pátio / preparação
   custosPatio: VehicleExpense[];
+
+  // Controle de concorrência otimista (OCC) e sincronização híbrida
+  version?: number;
+  atualizadoEm?: string;
 }
 
-export type PaymentMethod = 'a_vista_pix' | 'financiamento' | 'cartao_credito' | 'misto';
+export type PaymentMethod = 'a_vista_pix' | 'financiamento' | 'cartao_credito' | 'misto' | 'troca';
 
 export interface Sale {
   id: string;
@@ -114,6 +126,14 @@ export interface Sale {
   valorEntrada?: number;
   valorFinanciado?: number;
   numeroParcelas?: number;
+
+  // Carro na Troca / Trade-in (se houver)
+  veiculoTrocaDescricao?: string;
+  veiculoTrocaValor?: number;
+
+  // Taxa de Intermediação de Cartão (MDR)
+  taxaCartaoPercentual?: number;
+  taxaCartaoValor?: number;
   
   // Garantia e Contrato
   tipoContratoId: string;
@@ -130,6 +150,16 @@ export interface Sale {
   custosPosVenda: PostSaleCost[];
   
   observacoes?: string;
+
+  // Status da venda (ativa ou cancelada/distratada)
+  statusVenda?: 'concluida' | 'cancelada';
+  motivoCancelamento?: string;
+  dataCancelamento?: string;
+  canceladoPor?: string;
+
+  // Controle de concorrência otimista (OCC) e sincronização híbrida
+  version?: number;
+  atualizadoEm?: string;
 }
 
 export interface Financier {
@@ -141,6 +171,8 @@ export interface Financier {
   taxaMedia?: number;
   ativa?: boolean;
   ativo?: boolean;
+  version?: number;
+  atualizadoEm?: string;
 }
 
 export interface ContractTemplate {
@@ -151,6 +183,8 @@ export interface ContractTemplate {
   descricao: string;
   cabecalhoPersonalizado?: string;
   rodapePersonalizado?: string;
+  version?: number;
+  atualizadoEm?: string;
 }
 
 export interface Salesperson {
@@ -161,9 +195,27 @@ export interface Salesperson {
   metaMensal?: number;
   ativo: boolean;
   dataContratacao?: string;
+  senha?: string;
+  version?: number;
+  atualizadoEm?: string;
 }
 
 export type UserRole = 'gestor' | 'vendedor';
+
+export interface SystemUser {
+  id: string;
+  nome: string;
+  email: string;
+  telefone?: string;
+  papel: UserRole;
+  senha: string; // PIN ou senha
+  ativo: boolean;
+  metaMensal?: number;
+  dataCriacao: string;
+  ultimoAcesso?: string;
+  version?: number;
+  atualizadoEm?: string;
+}
 
 export interface LetterheadConfig {
   logoUrl?: string;
@@ -197,6 +249,8 @@ export interface StoreProfile {
   site: string;
   logoUrl?: string;
   papelTimbrado?: LetterheadConfig;
+  version?: number;
+  atualizadoEm?: string;
 }
 
 export interface FinancialSummary {
@@ -219,12 +273,20 @@ export type AuditActionType =
   | 'EDICAO_VEICULO'
   | 'DESPESA_PATIO'
   | 'VENDA_VEICULO'
+  | 'CANCELAMENTO_VENDA'
+  | 'RESERVA_VEICULO'
+  | 'CANCELAMENTO_RESERVA'
   | 'DEFINICAO_COMISSAO'
   | 'CADASTRO_PESSOA'
   | 'EDICAO_PESSOA'
   | 'EDICAO_CONFIGURACOES'
   | 'EDICAO_CONTRATO'
   | 'EXCLUSAO_VEICULO'
+  | 'CRIACAO_USUARIO'
+  | 'EDICAO_USUARIO'
+  | 'EXCLUSAO_USUARIO'
+  | 'LOGIN_SISTEMA'
+  | 'LOGOUT_SISTEMA'
   | 'SINCRONIZACAO_FIREBASE';
 
 export interface AuditLog {

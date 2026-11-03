@@ -1,15 +1,19 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
-  Car, Plus, Search, Filter, ShieldCheck, AlertTriangle, 
-  Wrench, Calculator, ShoppingCart, FileText, CheckCircle2, 
-  Trash2, Eye, Fuel, Gauge, Calendar, DollarSign, LayoutGrid, List
+  Car, Plus, Search, 
+  Wrench, Calculator, ShoppingCart, FileText, 
+  Trash2, DollarSign, LayoutGrid, List,
+  Bookmark, Clock, RotateCcw, X, Check
 } from 'lucide-react';
-import { Vehicle, FormerOwner, CommercialCategory, VehicleStatus, VehicleType } from '../../types';
+import { Vehicle, FormerOwner, VehicleType, UserRole } from '../../types';
 import { 
-  formatCurrency, formatNumber, formatDate, 
-  computeAcquisitionCost, computePatioExpenses, computePreSaleTotalCost 
+  formatCurrency, 
+  computeAcquisitionCost, computePatioExpenses, computePreSaleTotalCost,
+  sumCurrency, toCents, fromCents, formatDate, clampNumber, roundCurrency
 } from '../../utils/formatters';
 import { PageHeader, KpiCard, StatusBadge, UnderlineTabs, formStyles } from '../common/DesignSystem';
+import { PaginationControls } from '../common/PaginationControls';
+import { usePaginatedList } from '../../hooks/usePaginatedList';
 
 interface InventoryViewProps {
   vehicles: Vehicle[];
@@ -19,6 +23,10 @@ interface InventoryViewProps {
   onOpenSaleModal: (vehicle: Vehicle) => void;
   onOpenReceiptModal: (vehicle: Vehicle, owner?: FormerOwner) => void;
   onDeleteVehicle: (vehicleId: string) => void;
+  onReserveVehicle?: (vehicle: Vehicle, cliente: string, diasValidade: number, valorSinal?: number) => void;
+  onCancelReservation?: (vehicleId: string) => void;
+  userRole?: UserRole;
+  initialSearchTerm?: string;
 }
 
 export const InventoryView: React.FC<InventoryViewProps> = ({
@@ -28,10 +36,26 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
   onOpenCostsModal,
   onOpenSaleModal,
   onOpenReceiptModal,
-  onDeleteVehicle
+  onDeleteVehicle,
+  onReserveVehicle,
+  onCancelReservation,
+  userRole = 'vendedor',
+  initialSearchTerm = ''
 }) => {
-  const [searchTerm, setSearchTerm] = useState('');
-  const [activeTab, setActiveTab] = useState<'todos' | 'em_estoque' | 'vendido' | 'repasse'>('em_estoque');
+  const isGestor = userRole === 'gestor';
+  const [searchTerm, setSearchTerm] = useState(initialSearchTerm);
+  const [activeTab, setActiveTab] = useState<'todos' | 'em_estoque' | 'reservado' | 'vendido' | 'repasse'>('todos');
+  const [reservingVehicle, setReservingVehicle] = useState<Vehicle | null>(null);
+  const [reserveCliente, setReserveCliente] = useState('');
+  const [reserveDias, setReserveDias] = useState(2);
+  const [reserveSinal, setReserveSinal] = useState<number>(500);
+
+  useEffect(() => {
+    if (initialSearchTerm) {
+      setSearchTerm(initialSearchTerm);
+      setActiveTab('todos'); // Permite encontrar tanto estoque quanto vendido
+    }
+  }, [initialSearchTerm]);
   const [typeFilter, setTypeFilter] = useState<'todos' | VehicleType>('todos');
   const [viewMode, setViewMode] = useState<'tabela' | 'cards'>('tabela');
 
@@ -47,6 +71,7 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
 
       let matchesTab = true;
       if (activeTab === 'em_estoque') matchesTab = v.status === 'em_estoque';
+      else if (activeTab === 'reservado') matchesTab = v.status === 'reservado';
       else if (activeTab === 'vendido') matchesTab = v.status === 'vendido';
       else if (activeTab === 'repasse') matchesTab = v.categoriaComercial === 'repasse';
 
@@ -56,12 +81,19 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
     });
   }, [vehicles, searchTerm, activeTab, typeFilter]);
 
-  // Stock KPIs
+  // Paginação sob demanda com cache de páginas anteriores
+  const pagination = usePaginatedList<Vehicle>({
+    items: filteredVehicles,
+    initialPageSize: 10,
+    dependencies: [searchTerm, activeTab, typeFilter, filteredVehicles.length]
+  });
+
+  // Stock KPIs (em centavos inteiros exatos)
   const stockMetrics = useMemo(() => {
     const inStock = vehicles.filter(v => v.status === 'em_estoque');
-    const totalInvested = inStock.reduce((acc, v) => acc + computePreSaleTotalCost(v), 0);
-    const totalCommercial = inStock.reduce((acc, v) => acc + v.valorAnunciado, 0);
-    const potentialGrossMargin = totalCommercial - totalInvested;
+    const totalInvested = sumCurrency(inStock.map(v => computePreSaleTotalCost(v)));
+    const totalCommercial = sumCurrency(inStock.map(v => v.valorAnunciado));
+    const potentialGrossMargin = fromCents(toCents(totalCommercial) - toCents(totalInvested));
     return {
       count: inStock.length,
       totalInvested,
@@ -72,6 +104,7 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
 
   const tabs = [
     { id: 'em_estoque', label: 'Em Estoque', count: vehicles.filter(v => v.status === 'em_estoque').length },
+    { id: 'reservado', label: 'Reservados', count: vehicles.filter(v => v.status === 'reservado').length },
     { id: 'todos', label: 'Todos os Registros', count: vehicles.length },
     { id: 'repasse', label: 'Repasse (No Estado)', count: vehicles.filter(v => v.categoriaComercial === 'repasse').length },
     { id: 'vendido', label: 'Histórico Vendidos', count: vehicles.filter(v => v.status === 'vendido').length },
@@ -84,43 +117,49 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
       <PageHeader
         breadcrumb="Operação • Gestão de Frotas"
         title="Estoque de Veículos"
-        subtitle="Controle contábil rigoroso de custos de aquisição, despesas de pátio e preparação para venda."
-        primaryAction={{
+        subtitle={isGestor
+          ? "Controle contábil rigoroso de custos de aquisição, despesas de pátio e preparação para venda."
+          : "Consulta operacional do catálogo de veículos disponíveis, especificações e registro de vendas."}
+        primaryAction={isGestor ? {
           label: "Cadastrar Veículo",
           icon: Plus,
           onClick: onOpenEntryModal,
           id: "inventory-btn-add-vehicle"
-        }}
+        } : undefined}
       />
 
       {/* 2. KPIs de Estoque */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className={`grid grid-cols-1 sm:grid-cols-2 ${isGestor ? 'lg:grid-cols-4' : 'lg:grid-cols-2'} gap-4`}>
         <KpiCard
           title="Veículos Ativos"
           value={stockMetrics.count}
           icon={Car}
           subtext="Unidades prontas no pátio"
         />
+        {isGestor && (
+          <KpiCard
+            title="Capital Imobilizado"
+            value={formatCurrency(stockMetrics.totalInvested)}
+            icon={Calculator}
+            subtext="Compra + DETRAN + Pátio"
+          />
+        )}
         <KpiCard
-          title="Capital Imobilizado"
-          value={formatCurrency(stockMetrics.totalInvested)}
-          icon={Calculator}
-          subtext="Compra + DETRAN + Pátio"
-        />
-        <KpiCard
-          title="Valor FIPE / Anunciado"
+          title="Preço Anunciado Total"
           value={formatCurrency(stockMetrics.totalCommercial)}
           icon={DollarSign}
           subtext="Preço de tabela showroom"
         />
-        <KpiCard
-          title="Margem Bruta Estimada"
-          value={formatCurrency(stockMetrics.potentialGrossMargin)}
-          trend="up"
-          comparison="+ Potencial"
-          subtext="Se vendidos pelo valor anunciado"
-          isRedHighlight={true}
-        />
+        {isGestor && (
+          <KpiCard
+            title="Margem Bruta Estimada"
+            value={formatCurrency(stockMetrics.potentialGrossMargin)}
+            trend={stockMetrics.potentialGrossMargin >= 0 ? 'up' : 'down'}
+            comparison={stockMetrics.potentialGrossMargin >= 0 ? '+ Potencial' : '- Abaixo do Custo'}
+            subtext="Se vendidos pelo valor anunciado"
+            isRedHighlight={true}
+          />
+        )}
       </div>
 
       {/* 3. Abas Horizontais (Seção 10) */}
@@ -136,6 +175,7 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
           <Search className="w-4 h-4 text-[#A7A7AB] absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             type="text"
+            maxLength={100}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             placeholder="Filtrar por marca, modelo, versão, placa ou cor..."
@@ -177,8 +217,8 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
         </div>
       </div>
 
-      {/* 5. Lista / Tabela de Veículos */}
-      {filteredVehicles.length === 0 ? (
+      {/* 5. Tabela de Veículos em Estoque */}
+      {pagination.totalItems === 0 ? (
         <div className="bg-[#17171A] border border-[#2D2D32] rounded-[12px] p-12 text-center">
           <Car className="w-10 h-10 text-[#68686E] mx-auto mb-3" />
           <h3 className="text-base font-bold text-[#F5F5F5] font-display">
@@ -187,12 +227,14 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
           <p className="text-xs text-[#A7A7AB] max-w-sm mx-auto mt-1 mb-4">
             Não encontramos veículos correspondentes aos filtros selecionados.
           </p>
-          <button
-            onClick={onOpenEntryModal}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-[8px] bg-[#D4130D] hover:bg-[#E3271F] text-white text-xs font-semibold cursor-pointer"
-          >
-            <Plus className="w-4 h-4" /> Cadastrar Novo Veículo
-          </button>
+          {isGestor && (
+            <button
+              onClick={onOpenEntryModal}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-[8px] bg-[#D4130D] hover:bg-[#E3271F] text-white text-xs font-semibold cursor-pointer"
+            >
+              <Plus className="w-4 h-4" /> Cadastrar Novo Veículo
+            </button>
+          )}
         </div>
       ) : viewMode === 'tabela' ? (
         
@@ -202,18 +244,22 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr>
-                  <th className={formStyles.tableHeader}>Veículo / Identificação</th>
+                  <th className={formStyles.tableHeader}>Veículo e Identificação</th>
                   <th className={formStyles.tableHeader}>Categoria</th>
                   <th className={formStyles.tableHeader}>Status</th>
-                  <th className={`${formStyles.tableHeader} text-right`}>Custo Aquisição</th>
-                  <th className={`${formStyles.tableHeader} text-right`}>Despesas Pátio</th>
-                  <th className={`${formStyles.tableHeader} text-right`}>Custo Total Investido</th>
+                  {isGestor && (
+                    <>
+                      <th className={`${formStyles.tableHeader} text-right`}>Custo Aquisição</th>
+                      <th className={`${formStyles.tableHeader} text-right`}>Despesas Pátio</th>
+                      <th className={`${formStyles.tableHeader} text-right`}>Custo Total Investido</th>
+                    </>
+                  )}
                   <th className={`${formStyles.tableHeader} text-right`}>Preço Anunciado</th>
                   <th className={`${formStyles.tableHeader} text-center`}>Ações</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#2D2D32]">
-                {filteredVehicles.map(v => {
+                {pagination.paginatedItems.map(v => {
                   const acquisitionCost = computeAcquisitionCost(v);
                   const patioExpenses = computePatioExpenses(v);
                   const totalInvested = computePreSaleTotalCost(v);
@@ -259,34 +305,38 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                         />
                       </td>
 
-                      {/* Custo de Aquisição */}
-                      <td className="py-3 px-4 text-right font-num text-xs text-[#CAC9CA]">
-                        {formatCurrency(acquisitionCost)}
-                        {v.debitoDetran?.temDebito && v.debitoDetran.quemArca === 'loja' && (
-                          <span className="block text-[10px] text-[#D4130D]">
-                            + DETRAN {formatCurrency(v.debitoDetran.valor)}
-                          </span>
-                        )}
-                      </td>
+                      {isGestor && (
+                        <>
+                          {/* Custo de Aquisição */}
+                          <td className="py-3 px-4 text-right font-num text-xs text-[#CAC9CA]">
+                            {formatCurrency(acquisitionCost)}
+                            {v.debitoDetran?.temDebito && v.debitoDetran.quemArca === 'loja' && (
+                              <span className="block text-[10px] text-[#D4130D]">
+                                + DETRAN {formatCurrency(v.debitoDetran.valor)}
+                              </span>
+                            )}
+                          </td>
 
-                      {/* Despesas de Pátio */}
-                      <td className="py-3 px-4 text-right">
-                        <button
-                          onClick={() => onOpenCostsModal(v)}
-                          className="font-num text-xs text-[#CAC9CA] hover:text-[#D4130D] underline decoration-dotted transition-colors cursor-pointer"
-                          title="Clique para detalhar custos de oficina, funilaria e estética"
-                        >
-                          {formatCurrency(patioExpenses)}
-                        </button>
-                        <span className="block text-[10px] text-[#A7A7AB]">
-                          {v.custosPatio?.length || 0} lançamento(s)
-                        </span>
-                      </td>
+                          {/* Despesas de Pátio */}
+                          <td className="py-3 px-4 text-right">
+                            <button
+                              onClick={() => onOpenCostsModal(v)}
+                              className="font-num text-xs text-[#CAC9CA] hover:text-[#D4130D] underline decoration-dotted transition-colors cursor-pointer"
+                              title="Clique para detalhar custos de oficina, funilaria e estética"
+                            >
+                              {formatCurrency(patioExpenses)}
+                            </button>
+                            <span className="block text-[10px] text-[#A7A7AB]">
+                              {v.custosPatio?.length || 0} lançamento(s)
+                            </span>
+                          </td>
 
-                      {/* Custo Total Investido */}
-                      <td className="py-3 px-4 text-right font-num font-bold text-sm text-[#F5F5F5]">
-                        {formatCurrency(totalInvested)}
-                      </td>
+                          {/* Custo Total Investido */}
+                          <td className="py-3 px-4 text-right font-num font-bold text-sm text-[#F5F5F5]">
+                            {formatCurrency(totalInvested)}
+                          </td>
+                        </>
+                      )}
 
                       {/* Preço Anunciado */}
                       <td className="py-3 px-4 text-right font-num font-bold text-sm text-[#22C55E]">
@@ -296,37 +346,76 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                       {/* Ações */}
                       <td className="py-3 px-4 text-center">
                         <div className="flex items-center justify-center gap-1.5">
-                          {/* Custos e Simulador */}
-                          <button
-                            onClick={() => onOpenCostsModal(v)}
-                            className="p-1.5 rounded-[6px] bg-[#202024] hover:bg-[#2D2D32] text-[#CAC9CA] hover:text-white border border-[#2D2D32] transition-colors cursor-pointer"
-                            title="Lançar Custos de Pátio & Simulador de Margem"
-                          >
-                            <Wrench className="w-4 h-4 text-[#A7A7AB]" />
-                          </button>
-
-                          {/* Recibo de Compra */}
-                          <button
-                            onClick={() => onOpenReceiptModal(v, owner)}
-                            className="p-1.5 rounded-[6px] bg-[#202024] hover:bg-[#2D2D32] text-[#CAC9CA] hover:text-white border border-[#2D2D32] transition-colors cursor-pointer"
-                            title="Imprimir Recibo de Compra do Antigo Dono"
-                          >
-                            <FileText className="w-4 h-4 text-[#A7A7AB]" />
-                          </button>
-
-                          {/* Vender Veículo */}
-                          {v.status === 'em_estoque' && (
+                          {/* Custos e Simulador (Exclusivo Gestor) */}
+                          {isGestor && (
                             <button
-                              onClick={() => onOpenSaleModal(v)}
-                              className="px-2.5 py-1 rounded-[6px] bg-[#D4130D] hover:bg-[#E3271F] text-white text-xs font-semibold transition-colors flex items-center gap-1 cursor-pointer"
-                              title="Registrar Venda / Contrato"
+                              onClick={() => onOpenCostsModal(v)}
+                              className="p-1.5 rounded-[6px] bg-[#202024] hover:bg-[#2D2D32] text-[#CAC9CA] hover:text-white border border-[#2D2D32] transition-colors cursor-pointer"
+                              title="Lançar Custos de Pátio & Simulador de Margem"
                             >
-                              <ShoppingCart className="w-3.5 h-3.5" /> Vender
+                              <Wrench className="w-4 h-4 text-[#A7A7AB]" />
                             </button>
                           )}
 
-                          {/* Excluir se em estoque */}
-                          {v.status === 'em_estoque' && (
+                          {/* Recibo de Compra (Exclusivo Gestor — contém valorPago) */}
+                          {isGestor && (
+                            <button
+                              onClick={() => onOpenReceiptModal(v, owner)}
+                              className="p-1.5 rounded-[6px] bg-[#202024] hover:bg-[#2D2D32] text-[#CAC9CA] hover:text-white border border-[#2D2D32] transition-colors cursor-pointer"
+                              title="Imprimir Recibo de Compra do Antigo Dono"
+                            >
+                              <FileText className="w-4 h-4 text-[#A7A7AB]" />
+                            </button>
+                          )}
+
+                          {/* Reservar Veículo (se em estoque) */}
+                          {v.status === 'em_estoque' && isGestor && onReserveVehicle && (
+                            <button
+                              onClick={() => {
+                                setReservingVehicle(v);
+                                setReserveCliente('');
+                                setReserveDias(2);
+                                setReserveSinal(500);
+                              }}
+                              className="p-1.5 rounded-[6px] bg-[#202024] hover:bg-[#2D2D32] text-amber-400 border border-[#2D2D32] transition-colors cursor-pointer"
+                              title="Reservar Veículo (Sinal / Bloqueio Temporário)"
+                            >
+                              <Bookmark className="w-4 h-4" />
+                            </button>
+                          )}
+
+                          {/* Liberar Reserva (se reservado) */}
+                          {v.status === 'reservado' && isGestor && onCancelReservation && (
+                            <button
+                              onClick={() => {
+                                if (window.confirm(`Deseja cancelar a reserva do veículo ${v.marca} ${v.modelo} e devolvê-lo ao estoque disponível?`)) {
+                                  onCancelReservation(v.id);
+                                }
+                              }}
+                              className="p-1.5 rounded-[6px] bg-amber-950/30 hover:bg-amber-900/40 text-amber-400 border border-amber-800/50 transition-colors cursor-pointer"
+                              title={`Cancelar Reserva de ${v.reservadoPara || 'Cliente'}`}
+                            >
+                              <RotateCcw className="w-4 h-4" />
+                            </button>
+                          )}
+
+                          {/* Vender Veículo */}
+                          {(v.status === 'em_estoque' || v.status === 'reservado') ? (
+                            <button
+                              onClick={() => onOpenSaleModal(v)}
+                              className="px-2.5 py-1 rounded-[6px] bg-[#D4130D] hover:bg-[#E3271F] text-white text-xs font-semibold transition-colors flex items-center gap-1 cursor-pointer"
+                              title="Registrar Venda do Veículo"
+                            >
+                              <ShoppingCart className="w-3.5 h-3.5" /> Vender
+                            </button>
+                          ) : (
+                            !isGestor && (
+                              <span className="text-[11px] text-[#68686E] font-medium">Vendido</span>
+                            )
+                          )}
+
+                          {/* Excluir se em estoque (Apenas perfil Gestor com privilégios administrativos) */}
+                          {v.status === 'em_estoque' && isGestor && (
                             <button
                               onClick={() => {
                                 if (window.confirm(`Deseja excluir o veículo ${v.marca} ${v.modelo} (${v.placa})?`)) {
@@ -334,7 +423,7 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                                 }
                               }}
                               className="p-1.5 rounded-[6px] hover:bg-[#D4130D]/20 text-[#68686E] hover:text-[#D4130D] transition-colors cursor-pointer"
-                              title="Excluir Registro"
+                              title="Excluir Registro (Gestor)"
                             >
                               <Trash2 className="w-4 h-4" />
                             </button>
@@ -354,9 +443,7 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
 
         /* CARDS GRID */
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredVehicles.map(v => {
-            const acquisitionCost = computeAcquisitionCost(v);
-            const patioExpenses = computePatioExpenses(v);
+          {pagination.paginatedItems.map(v => {
             const totalInvested = computePreSaleTotalCost(v);
             const owner = owners.find(o => o.id === v.antigoDonoId);
 
@@ -389,10 +476,17 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                     </div>
 
                     <div className="grid grid-cols-2 gap-2 text-xs pt-2 border-t border-[#2D2D32]">
-                      <div>
-                        <span className="text-[#A7A7AB] block text-[10px] uppercase">Custo Total</span>
-                        <span className="font-bold text-[#F5F5F5] font-num">{formatCurrency(totalInvested)}</span>
-                      </div>
+                      {isGestor ? (
+                        <div>
+                          <span className="text-[#A7A7AB] block text-[10px] uppercase">Custo Total</span>
+                          <span className="font-bold text-[#F5F5F5] font-num">{formatCurrency(totalInvested)}</span>
+                        </div>
+                      ) : (
+                        <div>
+                          <span className="text-[#A7A7AB] block text-[10px] uppercase">Quilometragem</span>
+                          <span className="font-bold text-[#CAC9CA] font-num">{(v.quilometragem || 0).toLocaleString('pt-BR')} km</span>
+                        </div>
+                      )}
                       <div className="text-right">
                         <span className="text-[#A7A7AB] block text-[10px] uppercase">Preço Anúncio</span>
                         <span className="font-bold text-[#22C55E] font-num">{formatCurrency(v.valorAnunciado)}</span>
@@ -403,26 +497,59 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
 
                 <div className="p-3 bg-[#202024] border-t border-[#2D2D32] flex items-center justify-between gap-2">
                   <div className="flex items-center gap-1.5">
-                    <button
-                      onClick={() => onOpenCostsModal(v)}
-                      className="p-1.5 rounded-[6px] bg-[#17171A] hover:bg-[#2D2D32] border border-[#2D2D32] text-[#CAC9CA]"
-                      title="Custos & Simulador"
-                    >
-                      <Wrench className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      onClick={() => onOpenReceiptModal(v, owner)}
-                      className="p-1.5 rounded-[6px] bg-[#17171A] hover:bg-[#2D2D32] border border-[#2D2D32] text-[#CAC9CA]"
-                      title="Recibo Compra"
-                    >
-                      <FileText className="w-3.5 h-3.5" />
-                    </button>
+                    {isGestor && (
+                      <>
+                        <button
+                          onClick={() => onOpenCostsModal(v)}
+                          className="p-1.5 rounded-[6px] bg-[#17171A] hover:bg-[#2D2D32] border border-[#2D2D32] text-[#CAC9CA] cursor-pointer"
+                          title="Custos & Simulador"
+                        >
+                          <Wrench className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => onOpenReceiptModal(v, owner)}
+                          className="p-1.5 rounded-[6px] bg-[#17171A] hover:bg-[#2D2D32] border border-[#2D2D32] text-[#CAC9CA] cursor-pointer"
+                          title="Recibo Compra"
+                        >
+                          <FileText className="w-3.5 h-3.5" />
+                        </button>
+                      </>
+                    )}
+
+                    {v.status === 'em_estoque' && isGestor && onReserveVehicle && (
+                      <button
+                        onClick={() => {
+                          setReservingVehicle(v);
+                          setReserveCliente('');
+                          setReserveDias(2);
+                          setReserveSinal(500);
+                        }}
+                        className="p-1.5 rounded-[6px] bg-[#17171A] hover:bg-[#2D2D32] border border-[#2D2D32] text-amber-400 cursor-pointer"
+                        title="Reservar Veículo"
+                      >
+                        <Bookmark className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+
+                    {v.status === 'reservado' && isGestor && onCancelReservation && (
+                      <button
+                        onClick={() => {
+                          if (window.confirm(`Deseja cancelar a reserva do veículo ${v.marca} ${v.modelo}?`)) {
+                            onCancelReservation(v.id);
+                          }
+                        }}
+                        className="p-1.5 rounded-[6px] bg-amber-950/30 hover:bg-amber-900/40 border border-amber-800/50 text-amber-400 cursor-pointer"
+                        title="Liberar Reserva"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                   </div>
 
-                  {v.status === 'em_estoque' && (
+                  {(v.status === 'em_estoque' || v.status === 'reservado') && (
                     <button
                       onClick={() => onOpenSaleModal(v)}
-                      className="px-3 py-1.5 rounded-[6px] bg-[#D4130D] hover:bg-[#E3271F] text-white text-xs font-semibold flex items-center gap-1.5"
+                      className="px-3 py-1.5 rounded-[6px] bg-[#D4130D] hover:bg-[#E3271F] text-white text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
                     >
                       <ShoppingCart className="w-3.5 h-3.5" /> Vender
                     </button>
@@ -431,6 +558,128 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Paginação de Estoque com Cache */}
+      {pagination.totalItems > 0 && (
+        <PaginationControls
+          currentPage={pagination.currentPage}
+          totalPages={pagination.totalPages}
+          totalItems={pagination.totalItems}
+          pageSize={pagination.pageSize}
+          onPageChange={pagination.goToPage}
+          onPageSizeChange={pagination.changePageSize}
+          pageSizeOptions={[10, 20, 50]}
+          isCached={pagination.isCurrentPageCached}
+          isLoading={pagination.isLoading}
+          itemLabel="veículos no estoque"
+        />
+      )}
+
+      {/* Modal de Reserva de Veículo */}
+      {reservingVehicle && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6">
+          <div className="bg-[#17171A] border border-[#2D2D32] rounded-[16px] w-full max-w-md overflow-hidden shadow-2xl relative text-[#F5F5F5]">
+            <div className="px-6 py-4 border-b border-[#2D2D32] flex items-center justify-between bg-[#080809]">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-[8px] bg-amber-600/20 text-amber-400 border border-amber-600/30 flex items-center justify-center">
+                  <Bookmark className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white">Reservar Veículo</h3>
+                  <p className="text-[11px] text-[#A7A7AB]">
+                    {reservingVehicle.marca} {reservingVehicle.modelo} • {reservingVehicle.placa}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setReservingVehicle(null)}
+                className="w-7 h-7 rounded-md bg-[#202024] hover:bg-[#2D2D32] text-[#CAC9CA] flex items-center justify-center cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!reserveCliente.trim()) {
+                  alert('Informe o nome do cliente interessado.');
+                  return;
+                }
+                onReserveVehicle?.(
+                  reservingVehicle,
+                  reserveCliente.trim(),
+                  reserveDias,
+                  reserveSinal > 0 ? reserveSinal : undefined
+                );
+                setReservingVehicle(null);
+              }}
+              className="p-5 space-y-4"
+            >
+              <div>
+                <label className={formStyles.label}>Nome do Cliente Interessado *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Ex: Carlos Eduardo Silveira"
+                  value={reserveCliente}
+                  onChange={(e) => setReserveCliente(e.target.value)}
+                  className={formStyles.input}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className={formStyles.label}>Validade da Reserva</label>
+                  <select
+                    value={reserveDias}
+                    onChange={(e) => setReserveDias(Number(e.target.value))}
+                    className={formStyles.input}
+                  >
+                    <option value={1}>24 horas (1 dia)</option>
+                    <option value={2}>48 horas (2 dias)</option>
+                    <option value={3}>72 horas (3 dias)</option>
+                    <option value={5}>5 dias úteis</option>
+                    <option value={7}>7 dias corridos</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className={formStyles.label}>Sinal / Entrada (R$)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={reserveSinal}
+                    onChange={(e) => setReserveSinal(clampNumber(e.target.value, 0, 1000000, 0))}
+                    className={formStyles.input}
+                  />
+                </div>
+              </div>
+
+              <div className="p-3 rounded-lg bg-amber-950/25 border border-amber-800/40 text-[11px] text-amber-300">
+                O veículo terá seu status alterado para <strong>Reservado</strong>, impedindo que outro vendedor conclua a venda do mesmo carro durante o período fixado.
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setReservingVehicle(null)}
+                  className="px-3.5 py-1.5 rounded-lg bg-[#202024] hover:bg-[#2D2D32] text-xs font-semibold text-[#CAC9CA] cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-neutral-950 text-xs font-bold flex items-center gap-1.5 shadow cursor-pointer"
+                >
+                  <Check className="w-3.5 h-3.5" /> Confirmar Reserva
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
 
