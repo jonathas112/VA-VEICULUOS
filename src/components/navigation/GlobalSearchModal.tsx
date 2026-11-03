@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { 
   Vehicle, FormerOwner, Sale, Salesperson, 
-  SystemUser, Financier, ContractTemplate 
+  SystemUser, Financier, ContractTemplate, UserRole 
 } from '../../types';
 import { formatCurrency } from '../../utils/formatters';
 
@@ -20,6 +20,7 @@ interface GlobalSearchModalProps {
   users?: SystemUser[];
   financiers?: Financier[];
   templates?: ContractTemplate[];
+  userRole?: UserRole;
   onNavigateToTab: (tab: string, entityId?: string, queryText?: string) => void;
 }
 
@@ -49,6 +50,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
   users = [],
   financiers = [],
   templates = [],
+  userRole = 'vendedor',
   onNavigateToTab
 }) => {
   const [query, setQuery] = useState('');
@@ -110,16 +112,21 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
     return Array.from(map.values());
   }, [users, salespeople]);
 
-  // System navigation shortcuts
-  const systemShortcuts = useMemo(() => [
-    { id: 'nav_inventory', label: 'Estoque de Veículos', tab: 'inventory', keywords: 'estoque carros patio veiculos', icon: Car, hint: 'Acessar inventário de carros' },
-    { id: 'nav_users', label: 'Gestão de Usuários & Equipe', tab: 'users', keywords: 'usuarios equipe gestores vendedores logins acesso', icon: Users, hint: 'Cadastrar e gerenciar gestores e vendedores' },
-    { id: 'nav_sales', label: 'Histórico de Vendas', tab: 'sales', keywords: 'vendas propostas negocios vendidos', icon: ShoppingCart, hint: 'Consultar relatórios e vendas realizadas' },
-    { id: 'nav_commissions', label: 'Controle de Comissões', tab: 'commissions', keywords: 'comissoes pendentes aprovacao valores', icon: Clock, hint: 'Definir e aprovar comissões de vendedores' },
-    { id: 'nav_financial', label: 'Painel Financeiro & Balanço', tab: 'financial', keywords: 'financeiro fluxo lucro despesas receitas', icon: DollarSign, hint: 'Balanço financeiro e lucros' },
-    { id: 'nav_documents', label: 'Documentos & Contratos', tab: 'documents', keywords: 'documentos contratos recibos garantias repasses', icon: FileText, hint: 'Emitir contratos e recibos timbrados' },
-    { id: 'nav_settings', label: 'Configurações da Loja', tab: 'settings', keywords: 'configuracoes papel timbrado loja cnpj bancos', icon: Settings, hint: 'Ajustes da loja, financeiras e configurações' }
-  ], []);
+  const isGestor = userRole === 'gestor';
+
+  // System navigation shortcuts (filtered by RBAC role)
+  const systemShortcuts = useMemo(() => {
+    const all = [
+      { id: 'nav_inventory', label: 'Estoque de Veículos', tab: 'inventory', keywords: 'estoque carros patio veiculos', icon: Car, hint: 'Acessar inventário de carros', gestorOnly: false },
+      { id: 'nav_users', label: 'Gestão de Usuários & Equipe', tab: 'users', keywords: 'usuarios equipe gestores vendedores logins acesso', icon: Users, hint: 'Cadastrar e gerenciar gestores e vendedores', gestorOnly: true },
+      { id: 'nav_sales', label: 'Histórico de Vendas', tab: 'sales', keywords: 'vendas propostas negocios vendidos', icon: ShoppingCart, hint: 'Consultar relatórios e vendas realizadas', gestorOnly: false },
+      { id: 'nav_commissions', label: 'Controle de Comissões', tab: 'commissions', keywords: 'comissoes pendentes aprovacao valores', icon: Clock, hint: isGestor ? 'Definir e aprovar comissões de vendedores' : 'Acompanhar minhas comissões', gestorOnly: false },
+      { id: 'nav_financial', label: 'Painel Financeiro & Balanço', tab: 'financial', keywords: 'financeiro fluxo lucro despesas receitas', icon: DollarSign, hint: 'Balanço financeiro e lucros', gestorOnly: true },
+      { id: 'nav_documents', label: 'Documentos & Contratos', tab: 'documents', keywords: 'documentos contratos recibos garantias repasses', icon: FileText, hint: 'Emitir contratos e recibos timbrados', gestorOnly: false },
+      { id: 'nav_settings', label: 'Configurações da Loja', tab: 'settings', keywords: 'configuracoes papel timbrado loja cnpj bancos', icon: Settings, hint: 'Ajustes da loja, financeiras e configurações', gestorOnly: true }
+    ];
+    return all.filter(item => !item.gestorOnly || isGestor);
+  }, [isGestor]);
 
   // Filtered Results
   const results = useMemo(() => {
@@ -139,20 +146,22 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
     const q = normalizeText(rawQ);
     const cleanQ = cleanAlphanumeric(rawQ);
 
-    // 1. Matched Users & Team Members
-    const matchedUsers = unifiedUsers.filter(u => {
-      const nomeNorm = normalizeText(u.nome);
-      const emailNorm = normalizeText(u.email);
-      const telClean = cleanAlphanumeric(u.telefone);
-      const papelNorm = normalizeText(u.papel);
+    // 1. Matched Users & Team Members (Gestor only)
+    const matchedUsers = isGestor
+      ? unifiedUsers.filter(u => {
+          const nomeNorm = normalizeText(u.nome);
+          const emailNorm = normalizeText(u.email);
+          const telClean = cleanAlphanumeric(u.telefone);
+          const papelNorm = normalizeText(u.papel);
 
-      return (
-        nomeNorm.includes(q) ||
-        emailNorm.includes(q) ||
-        papelNorm.includes(q) ||
-        (cleanQ.length >= 3 && telClean.includes(cleanQ))
-      );
-    }).slice(0, 5);
+          return (
+            nomeNorm.includes(q) ||
+            emailNorm.includes(q) ||
+            papelNorm.includes(q) ||
+            (cleanQ.length >= 3 && telClean.includes(cleanQ))
+          );
+        }).slice(0, 5)
+      : [];
 
     // 2. Matched Vehicles
     const matchedVehicles = vehicles.filter(v => {
@@ -210,21 +219,24 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
       );
     }).slice(0, 5);
 
-    // 5. Matched Financiers
-    const matchedFinanciers = financiers.filter(f => {
-      const nomeNorm = normalizeText(f.nome);
-      const contatoNorm = normalizeText(f.contatoGerente || f.contato);
-      const telClean = cleanAlphanumeric(f.telefone);
+    // 5. Matched Financiers (Gestor only, since navigates to Settings)
+    const matchedFinanciers = isGestor
+      ? financiers.filter(f => {
+          const nomeNorm = normalizeText(f.nome);
+          const contatoNorm = normalizeText(f.contatoGerente || f.contato);
+          const telClean = cleanAlphanumeric(f.telefone);
 
-      return (
-        nomeNorm.includes(q) ||
-        contatoNorm.includes(q) ||
-        (cleanQ.length >= 3 && telClean.includes(cleanQ))
-      );
-    }).slice(0, 3);
+          return (
+            nomeNorm.includes(q) ||
+            contatoNorm.includes(q) ||
+            (cleanQ.length >= 3 && telClean.includes(cleanQ))
+          );
+        }).slice(0, 3)
+      : [];
 
-    // 6. Matched Templates
+    // 6. Matched Templates (hide recibo_compra from non-gestor)
     const matchedTemplates = templates.filter(t => {
+      if (!isGestor && t.tipo === 'recibo_compra') return false;
       const tituloNorm = normalizeText(t.titulo);
       const descNorm = normalizeText(t.descricao);
       const tipoNorm = normalizeText(t.tipo);
@@ -252,7 +264,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
       templates: matchedTemplates,
       shortcuts: matchedShortcuts
     };
-  }, [query, vehicles, owners, sales, unifiedUsers, financiers, templates, systemShortcuts]);
+  }, [query, vehicles, owners, sales, unifiedUsers, financiers, templates, systemShortcuts, isGestor]);
 
   // Counters
   const totalCount = 
@@ -397,6 +409,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
           <input
             ref={inputRef}
             type="text"
+            maxLength={100}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={handleInputKeyDown}
@@ -537,7 +550,10 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
                   Sugestões de Pesquisa (Clique para buscar)
                 </span>
                 <div className="flex flex-wrap gap-2">
-                  {['Juliana', 'Carlos', 'Corolla', 'Strada', 'admin@vaveiculos', 'Comissões', 'Recibo de Compra', 'Santander'].map((suggestion, idx) => (
+                  {(isGestor
+                    ? ['Juliana', 'Carlos', 'Corolla', 'Strada', 'admin@vaveiculos', 'Comissões', 'Recibo de Compra', 'Santander']
+                    : ['Corolla', 'Strada', 'Civic', 'Comissões', 'Garantia']
+                  ).map((suggestion, idx) => (
                     <button
                       key={idx}
                       type="button"
