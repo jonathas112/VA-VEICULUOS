@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
 import { 
-  Lock, Mail, KeyRound, Eye, EyeOff, ShieldCheck, 
-  UserCheck, ArrowRight, AlertCircle, ArrowLeft
+  Lock, Mail, KeyRound, Eye, EyeOff, 
+  ArrowRight, AlertCircle, ArrowLeft
 } from 'lucide-react';
 import { StoreProfile, SystemUser } from '../../types';
 import { BrandLogo } from '../common/BrandLogo';
 import { storageService } from '../../services/storage';
+import { firebaseAuth } from '../../services/firebase';
 
 interface LoginViewProps {
   store: StoreProfile;
@@ -18,8 +19,13 @@ export const LoginView: React.FC<LoginViewProps> = ({
   onLoginSuccess,
   onOpenShowroom
 }) => {
-  const [selectedRole, setSelectedRole] = useState<'todos' | 'gestor' | 'vendedor'>('todos');
-  const [loginInput, setLoginInput] = useState('');
+  const [loginInput, setLoginInput] = useState(() => {
+    try {
+      return localStorage.getItem('vaveiculos_remember_user') || '';
+    } catch {
+      return '';
+    }
+  });
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
@@ -31,31 +37,26 @@ export const LoginView: React.FC<LoginViewProps> = ({
     setErrorMsg('');
 
     if (!loginInput.trim()) {
-      setErrorMsg('Por favor, informe seu e-mail ou nome de usuário.');
+      setErrorMsg('Por favor, informe seu e-mail corporativo.');
       return;
     }
     if (!password.trim()) {
-      setErrorMsg('Por favor, informe sua senha ou PIN de segurança.');
+      setErrorMsg('Por favor, informe sua senha de acesso.');
       return;
     }
 
     setIsLoading(true);
 
-    setTimeout(() => {
+    setTimeout(async () => {
       const result = storageService.authenticateUser(loginInput, password);
 
       if (!result.success || !result.user) {
-        setErrorMsg(result.error || 'Credenciais inválidas. Verifique seu e-mail ou nome de usuário e a senha.');
+        setErrorMsg(result.error || 'Credenciais inválidas. Verifique seu e-mail e senha.');
         setIsLoading(false);
         return;
       }
 
-      // Se filtrou por papel específico e o usuário logado tem outro papel
-      if (selectedRole !== 'todos' && result.user.papel !== selectedRole) {
-        setErrorMsg(`O usuário informado possui perfil de ${result.user.papel.toUpperCase()}, diferente do filtro selecionado.`);
-        setIsLoading(false);
-        return;
-      }
+      await firebaseAuth.signInStaff(result.user.email, password);
 
       if (rememberMe) {
         localStorage.setItem('vaveiculos_remember_user', result.user.email);
@@ -63,16 +64,10 @@ export const LoginView: React.FC<LoginViewProps> = ({
         localStorage.removeItem('vaveiculos_remember_user');
       }
 
+      setPassword('');
       setIsLoading(false);
       onLoginSuccess(result.user);
-    }, 300);
-  };
-
-  const handleQuickFill = (email: string, pass = '1234', role?: 'gestor' | 'vendedor') => {
-    setLoginInput(email);
-    setPassword(pass);
-    setErrorMsg('');
-    if (role) setSelectedRole(role);
+    }, 250);
   };
 
   return (
@@ -109,47 +104,8 @@ export const LoginView: React.FC<LoginViewProps> = ({
               Painel de Gestão VA
             </h1>
             <p className="text-xs text-[#A7A7AB]">
-              Acesso restrito para Gestores e Consultores de Vendas da VA Veículos
+              Informe suas credenciais corporativas para acessar o sistema
             </p>
-          </div>
-
-          {/* Role selector tabs */}
-          <div className="grid grid-cols-3 gap-1 bg-[#1A1A1E] p-1 rounded-[10px] border border-[#2D2D32] text-xs">
-            <button
-              type="button"
-              onClick={() => setSelectedRole('todos')}
-              className={`py-1.5 rounded-[6px] font-semibold transition-all cursor-pointer ${
-                selectedRole === 'todos'
-                  ? 'bg-[#26262B] text-white shadow-sm'
-                  : 'text-[#A7A7AB] hover:text-white'
-              }`}
-            >
-              Geral
-            </button>
-            <button
-              type="button"
-              onClick={() => setSelectedRole('gestor')}
-              className={`py-1.5 rounded-[6px] font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                selectedRole === 'gestor'
-                  ? 'bg-[#D4130D] text-white font-bold shadow-sm'
-                  : 'text-[#A7A7AB] hover:text-white'
-              }`}
-            >
-              <ShieldCheck className="w-3.5 h-3.5" />
-              Gestor
-            </button>
-            <button
-              type="button"
-              onClick={() => setSelectedRole('vendedor')}
-              className={`py-1.5 rounded-[6px] font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                selectedRole === 'vendedor'
-                  ? 'bg-[#3B82F6] text-white font-bold shadow-sm'
-                  : 'text-[#A7A7AB] hover:text-white'
-              }`}
-            >
-              <UserCheck className="w-3.5 h-3.5" />
-              Vendedor
-            </button>
           </div>
 
           {/* Error Message */}
@@ -174,18 +130,13 @@ export const LoginView: React.FC<LoginViewProps> = ({
                   type="text"
                   required
                   autoFocus
+                  maxLength={120}
                   value={loginInput}
                   onChange={(e) => {
                     setLoginInput(e.target.value);
                     if (errorMsg) setErrorMsg('');
                   }}
-                  placeholder={
-                    selectedRole === 'gestor' 
-                      ? 'admin@vaveiculos.com.br' 
-                      : selectedRole === 'vendedor'
-                      ? 'carlos@vaveiculos.com.br'
-                      : 'usuario@vaveiculos.com.br'
-                  }
+                  placeholder="usuario@vaveiculos.com.br"
                   className="w-full bg-[#1A1A1E] text-sm text-[#F5F5F5] placeholder-[#68686E] pl-10 pr-3 py-2.5 rounded-[8px] border border-[#2D2D32] focus:border-[#D4130D] focus:outline-none focus:ring-1 focus:ring-[#D4130D] transition-colors"
                 />
               </div>
@@ -197,21 +148,19 @@ export const LoginView: React.FC<LoginViewProps> = ({
                 <label className="text-[11px] font-bold text-[#A7A7AB] uppercase tracking-wider block">
                   Senha de Acesso
                 </label>
-                <span className="text-[10px] text-[#68686E]">
-                  Senha Padrão: <strong className="text-[#A7A7AB]">1234</strong>
-                </span>
               </div>
               <div className="relative">
                 <KeyRound className="w-4 h-4 text-[#A7A7AB] absolute left-3.5 top-1/2 -translate-y-1/2" />
                 <input
                   type={showPassword ? 'text' : 'password'}
                   required
+                  maxLength={64}
                   value={password}
                   onChange={(e) => {
                     setPassword(e.target.value);
                     if (errorMsg) setErrorMsg('');
                   }}
-                  placeholder="••••"
+                  placeholder="••••••••"
                   className="w-full bg-[#1A1A1E] text-sm text-[#F5F5F5] placeholder-[#68686E] pl-10 pr-10 py-2.5 rounded-[8px] border border-[#2D2D32] focus:border-[#D4130D] focus:outline-none focus:ring-1 focus:ring-[#D4130D] transition-colors"
                 />
                 <button
@@ -234,16 +183,8 @@ export const LoginView: React.FC<LoginViewProps> = ({
                   onChange={(e) => setRememberMe(e.target.checked)}
                   className="w-4 h-4 rounded bg-[#1A1A1E] border-[#2D2D32] text-[#D4130D] focus:ring-0 focus:ring-offset-0 cursor-pointer"
                 />
-                <span>Lembrar meu acesso</span>
+                <span>Lembrar meu e-mail neste dispositivo</span>
               </label>
-
-              <button
-                type="button"
-                onClick={() => handleQuickFill('admin@vaveiculos.com.br', '1234', 'gestor')}
-                className="text-[11px] text-[#D4130D] hover:underline cursor-pointer"
-              >
-                Preencher Gestor
-              </button>
             </div>
 
             {/* Submit Button */}
@@ -263,51 +204,11 @@ export const LoginView: React.FC<LoginViewProps> = ({
             </button>
           </form>
 
-          {/* Quick Credential Test Pills */}
-          <div className="pt-4 border-t border-[#2D2D32] space-y-2">
-            <span className="text-[10px] uppercase tracking-wider text-[#68686E] font-bold block text-center">
-              Acesso Rápido para Testes (Clique para preencher)
-            </span>
-            <div className="flex flex-col gap-1.5">
-              <button
-                type="button"
-                onClick={() => handleQuickFill('admin@vaveiculos.com.br', '1234', 'gestor')}
-                className="w-full flex items-center justify-between px-3 py-2 rounded-[8px] bg-[#17171A] hover:bg-[#202024] border border-[#2D2D32] text-xs text-left transition-colors cursor-pointer group"
-              >
-                <div className="flex items-center gap-2 truncate">
-                  <ShieldCheck className="w-3.5 h-3.5 text-[#D4130D]" />
-                  <span className="font-semibold text-[#F5F5F5]">Gestor Geral</span>
-                  <span className="text-[11px] text-[#A7A7AB] truncate">admin@vaveiculos.com.br</span>
-                </div>
-                <span className="text-[10px] text-[#A7A7AB] font-mono group-hover:text-white">PIN: 1234</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleQuickFill('carlos@vaveiculos.com.br', '1234', 'vendedor')}
-                className="w-full flex items-center justify-between px-3 py-2 rounded-[8px] bg-[#17171A] hover:bg-[#202024] border border-[#2D2D32] text-xs text-left transition-colors cursor-pointer group"
-              >
-                <div className="flex items-center gap-2 truncate">
-                  <UserCheck className="w-3.5 h-3.5 text-[#3B82F6]" />
-                  <span className="font-semibold text-[#F5F5F5]">Carlos Ramos</span>
-                  <span className="text-[11px] text-[#A7A7AB] truncate">carlos@vaveiculos.com.br</span>
-                </div>
-                <span className="text-[10px] text-[#A7A7AB] font-mono group-hover:text-white">PIN: 1234</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleQuickFill('juliana@vaveiculos.com.br', '1234', 'vendedor')}
-                className="w-full flex items-center justify-between px-3 py-2 rounded-[8px] bg-[#17171A] hover:bg-[#202024] border border-[#2D2D32] text-xs text-left transition-colors cursor-pointer group"
-              >
-                <div className="flex items-center gap-2 truncate">
-                  <UserCheck className="w-3.5 h-3.5 text-[#3B82F6]" />
-                  <span className="font-semibold text-[#F5F5F5]">Juliana Costa</span>
-                  <span className="text-[11px] text-[#A7A7AB] truncate">juliana@vaveiculos.com.br</span>
-                </div>
-                <span className="text-[10px] text-[#A7A7AB] font-mono group-hover:text-white">PIN: 1234</span>
-              </button>
-            </div>
+          {/* Aviso Institucional de Segurança */}
+          <div className="pt-4 border-t border-[#2D2D32] text-center">
+            <p className="text-[11px] text-[#68686E]">
+              Acesso monitorado e protegido por hash criptográfico e sessão assinada. Em caso de perda de senha, solicite redefinição ao Gestor Geral.
+            </p>
           </div>
 
         </div>

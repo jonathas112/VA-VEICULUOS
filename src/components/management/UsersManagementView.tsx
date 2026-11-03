@@ -8,7 +8,7 @@ import {
 import { SystemUser, UserRole, StoreProfile } from '../../types';
 import { PageHeader, KpiCard, formStyles } from '../common/DesignSystem';
 import { storageService } from '../../services/storage';
-import { maskPhone, isValidPhone } from '../../utils/formatters';
+import { maskPhone, isValidPhone, isValidEmail, clampNumber } from '../../utils/formatters';
 import { PaginationControls } from '../common/PaginationControls';
 import { usePaginatedList } from '../../hooks/usePaginatedList';
 
@@ -50,8 +50,8 @@ export const UsersManagementView: React.FC<UsersManagementViewProps> = ({
   const [formEmail, setFormEmail] = useState('');
   const [formTelefone, setFormTelefone] = useState('');
   const [formPapel, setFormPapel] = useState<UserRole>('vendedor');
-  const [formSenha, setFormSenha] = useState('1234');
-  const [formConfirmSenha, setFormConfirmSenha] = useState('1234');
+  const [formSenha, setFormSenha] = useState('');
+  const [formConfirmSenha, setFormConfirmSenha] = useState('');
   const [formMetaMensal, setFormMetaMensal] = useState<number>(5);
   const [formAtivo, setFormAtivo] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
@@ -60,6 +60,16 @@ export const UsersManagementView: React.FC<UsersManagementViewProps> = ({
   const [newPassword, setNewPassword] = useState('');
   const [confirmNewPassword, setConfirmNewPassword] = useState('');
   const [showNewPassword, setShowNewPassword] = useState(false);
+
+  if (currentUserRole !== 'gestor') {
+    return (
+      <div className="p-10 rounded-[16px] bg-[#17171A] border border-[#D4130D]/40 text-center space-y-2">
+        <ShieldAlert className="w-10 h-10 text-[#D4130D] mx-auto" />
+        <h3 className="text-base font-bold text-[#F5F5F5]">Acesso Restrito à Gerência</h3>
+        <p className="text-xs text-[#A7A7AB]">Apenas usuários autenticados com perfil Gestor Geral podem visualizar ou gerenciar credenciais da equipe.</p>
+      </div>
+    );
+  }
 
   const refreshList = () => {
     setUsers(storageService.getUsers());
@@ -76,10 +86,10 @@ export const UsersManagementView: React.FC<UsersManagementViewProps> = ({
     setEditingUser(null);
     setFormNome('');
     setFormEmail('');
-    setFormTelefone('(83) 9');
+    setFormTelefone('');
     setFormPapel('vendedor');
-    setFormSenha('1234');
-    setFormConfirmSenha('1234');
+    setFormSenha('');
+    setFormConfirmSenha('');
     setFormMetaMensal(5);
     setFormAtivo(true);
     setShowPassword(false);
@@ -93,8 +103,8 @@ export const UsersManagementView: React.FC<UsersManagementViewProps> = ({
     setFormEmail(u.email);
     setFormTelefone(u.telefone || '');
     setFormPapel(u.papel);
-    setFormSenha(u.senha);
-    setFormConfirmSenha(u.senha);
+    setFormSenha('');
+    setFormConfirmSenha('');
     setFormMetaMensal(u.metaMensal || 5);
     setFormAtivo(u.ativo);
     setShowPassword(false);
@@ -110,19 +120,35 @@ export const UsersManagementView: React.FC<UsersManagementViewProps> = ({
       return;
     }
 
+    if (formNome.trim().length < 3) {
+      showNotification('error', 'Informe o nome completo do usuário (mínimo 3 caracteres).');
+      return;
+    }
+
+    if (!isValidEmail(formEmail)) {
+      showNotification('error', 'Por favor, informe um endereço de e-mail corporativo válido.');
+      return;
+    }
+
     if (formTelefone.trim() && !isValidPhone(formTelefone)) {
       showNotification('error', 'Por favor, informe um WhatsApp válido com DDD (10 ou 11 dígitos).');
       return;
     }
 
-    if (formPapel === 'vendedor' && (isNaN(formMetaMensal) || formMetaMensal < 1 || formMetaMensal > 100)) {
+    if (formPapel === 'vendedor' && (!Number.isFinite(formMetaMensal) || formMetaMensal < 1 || formMetaMensal > 100)) {
       showNotification('error', 'A meta mensal deve ser um número entre 1 e 100 veículos.');
       return;
     }
 
-    if (!editingUser && formSenha !== formConfirmSenha) {
-      showNotification('error', 'A senha e a confirmação de senha não coincidem.');
-      return;
+    if (!editingUser) {
+      if (formSenha.trim().length < 6 || formSenha.length > 64) {
+        showNotification('error', 'A senha de acesso deve conter entre 6 e 64 caracteres.');
+        return;
+      }
+      if (formSenha !== formConfirmSenha) {
+        showNotification('error', 'A senha e a confirmação de senha não coincidem.');
+        return;
+      }
     }
 
     // Check duplicate email
@@ -141,7 +167,7 @@ export const UsersManagementView: React.FC<UsersManagementViewProps> = ({
       email: emailLower,
       telefone: formTelefone.trim(),
       papel: formPapel,
-      senha: formSenha.trim() || '1234',
+      senha: editingUser ? editingUser.senha : formSenha.trim(),
       ativo: formAtivo,
       metaMensal: formPapel === 'vendedor' ? formMetaMensal : undefined,
       dataCriacao: editingUser ? editingUser.dataCriacao : new Date().toISOString(),
@@ -183,8 +209,8 @@ export const UsersManagementView: React.FC<UsersManagementViewProps> = ({
     e.preventDefault();
     if (!userForPasswordReset) return;
 
-    if (!newPassword.trim()) {
-      showNotification('error', 'Informe a nova senha ou PIN.');
+    if (newPassword.trim().length < 6 || newPassword.length > 64) {
+      showNotification('error', 'A nova senha deve conter entre 6 e 64 caracteres.');
       return;
     }
     if (newPassword !== confirmNewPassword) {
@@ -307,6 +333,7 @@ export const UsersManagementView: React.FC<UsersManagementViewProps> = ({
           <Search className="w-4 h-4 text-[#A7A7AB] absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             type="text"
+            maxLength={100}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             placeholder="Buscar por nome, e-mail ou WhatsApp..."
@@ -596,6 +623,7 @@ export const UsersManagementView: React.FC<UsersManagementViewProps> = ({
                 <input
                   type="text"
                   required
+                  maxLength={120}
                   value={formNome}
                   onChange={(e) => setFormNome(e.target.value)}
                   placeholder="Ex: Carlos Eduardo Ramos"
@@ -609,6 +637,7 @@ export const UsersManagementView: React.FC<UsersManagementViewProps> = ({
                 <input
                   type="email"
                   required
+                  maxLength={120}
                   value={formEmail}
                   onChange={(e) => setFormEmail(e.target.value)}
                   placeholder="usuario@vaveiculos.com.br"
@@ -638,6 +667,7 @@ export const UsersManagementView: React.FC<UsersManagementViewProps> = ({
                       <input
                         type={showPassword ? 'text' : 'password'}
                         required
+                        maxLength={64}
                         value={formSenha}
                         onChange={(e) => setFormSenha(e.target.value)}
                         placeholder="••••"
@@ -658,6 +688,7 @@ export const UsersManagementView: React.FC<UsersManagementViewProps> = ({
                     <input
                       type={showPassword ? 'text' : 'password'}
                       required
+                      maxLength={64}
                       value={formConfirmSenha}
                       onChange={(e) => setFormConfirmSenha(e.target.value)}
                       placeholder="••••"
@@ -676,7 +707,7 @@ export const UsersManagementView: React.FC<UsersManagementViewProps> = ({
                     min="1"
                     max="100"
                     value={formMetaMensal}
-                    onChange={(e) => setFormMetaMensal(Number(e.target.value))}
+                    onChange={(e) => setFormMetaMensal(Math.trunc(clampNumber(e.target.value, 0, 100, 0)))}
                     className={formStyles.input}
                   />
                 </div>
@@ -749,6 +780,7 @@ export const UsersManagementView: React.FC<UsersManagementViewProps> = ({
                   <input
                     type={showNewPassword ? 'text' : 'password'}
                     required
+                    maxLength={64}
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
                     placeholder="••••"
@@ -769,6 +801,7 @@ export const UsersManagementView: React.FC<UsersManagementViewProps> = ({
                 <input
                   type={showNewPassword ? 'text' : 'password'}
                   required
+                  maxLength={64}
                   value={confirmNewPassword}
                   onChange={(e) => setConfirmNewPassword(e.target.value)}
                   placeholder="••••"

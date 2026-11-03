@@ -6,87 +6,140 @@ service cloud.firestore {
     // Funções Auxiliares de Autenticação e Controle de Acesso Baseado em Papéis (RBAC)
     // -------------------------------------------------------------------------
     function isAuthenticated() {
-      return request.auth != null;
+      return request.auth != null
+        && request.auth.token.firebase.sign_in_provider != 'anonymous';
+    }
+
+    function hasActiveUserDoc() {
+      return isAuthenticated()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.ativo == true;
     }
 
     function isManager() {
       return isAuthenticated() && (
-        request.auth.token.role == 'gestor' || 
-        request.auth.token.email.matches('.*admin.*@vaveiculos\\.com\\.br') ||
-        !('role' in request.auth.token)
+        request.auth.token.role == 'gestor' ||
+        (hasActiveUserDoc() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.papel == 'gestor')
       );
     }
 
     function isStaff() {
-      return isAuthenticated();
+      return isManager() || (
+        isAuthenticated() && (
+          request.auth.token.role == 'vendedor' ||
+          (hasActiveUserDoc() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.papel == 'vendedor')
+        )
+      );
     }
 
-    // Regra padrão segura: nega leitura e escrita global
+    // Regra padrão segura (Zero Trust): nega leitura e escrita global por padrão
     match /{document=**} {
       allow read, write: if false;
     }
 
-    // 1. Configurações da loja e papel timbrado
-    // Leitura pública necessária para renderizar dados e logotipo no Showroom;
-    // Escrita estritamente restrita a operadores autenticados da loja.
+    // 1. Configurações públicas da loja e papel timbrado
+    // Leitura pública estritamente para exibir cabeçalho/contato na Vitrine;
+    // Escrita blindada exclusivamente para Gestores.
     match /store_config/{configId} {
       allow read: if true;
-      allow write: if isStaff();
+      allow write: if isManager();
     }
 
-    // 2. Veículos e estoque
-    // Leitura pública permitida para o catálogo do Showroom;
-    // Criação e atualização permitidas para equipe autenticada;
-    // Exclusão protegida para equipe autenticada.
-    match /vehicles/{vehicleId} {
+    // 1b. Configurações administrativas internas (settings)
+    match /settings/{settingId} {
+      allow read, write: if isManager();
+    }
+
+    // 2. Projeção pública do catálogo para a Vitrine (SEM dados de custo, chassi, renavam ou antigo dono)
+    match /vehicles_public/{vehicleId} {
       allow read: if true;
-      allow create, update: if isStaff();
-      allow delete: if isStaff();
+      allow create, update: if isStaff()
+        && (!('valorPago' in request.resource.data) || request.resource.data.valorPago == 0)
+        && (!('antigoDonoId' in request.resource.data) || request.resource.data.antigoDonoId == '');
+      allow delete: if isManager();
     }
 
-    // 3. Clientes e antigos proprietários (LGPD: dados pessoais sensíveis, CPF, RG, endereço)
-    // Acesso bloqueado para o público anônimo; restrito a operadores autenticados.
+    // 2b. Veículos completos e dossiê contábil interno (contém valorPago, debitoDetran, custosPatio)
+    // Leitura bloqueada para visitantes anônimos; exclusão restrita exclusivamente ao Gestor e PROIBIDA se o veículo já estiver vendido.
+    match /vehicles/{vehicleId} {
+      allow read: if isStaff();
+      allow create, update: if isStaff();
+      allow delete: if isManager() && resource.data.status != 'vendido';
+    }
+
+    // 3. Clientes e antigos proprietários (LGPD: CPF, RG, telefone, endereço)
     match /owners/{ownerId} {
-      allow read, write: if isStaff();
+      allow read, create, update: if isStaff();
+      allow delete: if isManager();
     }
 
     // 4. Vendas, contratos e comissões
-    // Acesso bloqueado para o público anônimo; restrito a operadores autenticados.
+    // Impede que um perfil Vendedor aprove ou forje sua própria comissão via API direta.
     match /sales/{saleId} {
-      allow read, create: if isStaff();
-      allow update, delete: if isStaff();
-    }
-
-    // 5. Modelos de minutas jurídicas, contratos e recibos
-    // Leitura e edição restritas a operadores autorizados da loja.
-    match /templates/{templateId} {
-      allow read, write: if isStaff();
-    }
-
-    // 6. Trilha de auditoria e log geral (Audit Trail)
-    // Garantia de Imutabilidade (Append-Only): registros jamais podem ser alterados ou apagados.
-    // Criação e leitura restritas a equipe autenticada.
-    match /audit_logs/{logId} {
       allow read: if isStaff();
-      allow create: if isStaff() && request.resource.data.keys().hasAll(['id', 'acao', 'categoria', 'descricao']);
+      allow create: if isManager() || (
+        isStaff()
+        && request.resource.data.comissaoPendente == true
+        && request.resource.data.comissaoValor == 0
+      );
+      allow update: if isManager() || (
+        isStaff()
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+          'comissaoValor',
+          'comissaoPendente',
+          'comissaoDefinidaPor',
+          'dataDefinicaoComissao',
+          'valorVenda',
+          'vendedorId'
+        ])
+      );
+      allow delete: if isManager();
+    }
+
+    // 5. Balanço Financeiro consolidado (DRE confidencial)
+    match /financial/{docId} {
+      allow read, write: if isManager();
+    }
+
+    // 6. Modelos de minutas jurídicas, contratos e recibos
+    // Leitura pela equipe para emissão; alteração de cláusulas restrita ao Gestor.
+    match /templates/{templateId} {
+      allow read: if isStaff();
+      allow write: if isManager();
+    }
+
+    // 7. Trilha de auditoria e Log Geral (Append-Only Imutável)
+    // Leitura estritamente restrita ao Gestor; criação permitida à equipe autenticada;
+    // Alteração e exclusão permanentemente bloqueadas.
+    match /audit_logs/{logId} {
+      allow read: if isManager();
+      allow create: if isStaff()
+        && request.resource.data.keys().hasAll(['id', 'timestamp', 'acao', 'categoria', 'descricao', 'usuarioNome']);
       allow update, delete: if false;
     }
 
-    // 7. Financeiras e bancos credenciados
+    // 8. Financeiras e bancos credenciados
     match /financiers/{financierId} {
-      allow read, write: if isStaff();
-    }
-
-    // 8. Membros e vendedores da equipe comercial
-    match /salespeople/{salespersonId} {
-      allow read, write: if isStaff();
-    }
-
-    // 9. Usuários do sistema (Gestores e Vendedores)
-    // Leitura por operadores autenticados; gerenciamento restrito a gestores
-    match /users/{userId} {
       allow read: if isStaff();
       allow write: if isManager();
+    }
+
+    // 9. Equipe comercial (sem armazenamento de senhas)
+    match /salespeople/{salespersonId} {
+      allow read: if isStaff();
+      allow write: if isManager() && !('senha' in request.resource.data);
+    }
+
+    // 10. Usuários do sistema (Gestores e Vendedores)
+    // Cada operador pode ler apenas o próprio perfil; listagem e escrita exclusivas do Gestor;
+    // Senhas jamais podem ser gravadas sem hash estruturado (sha256$).
+    match /users/{userId} {
+      allow read: if isManager() || (isAuthenticated() && request.auth.uid == userId);
+      allow create, update: if isManager()
+        && 'senha' in request.resource.data
+        && request.resource.data.senha is string
+        && request.resource.data.senha.matches('^sha256\\$.+');
+      allow delete: if isManager();
     }
   }
 }

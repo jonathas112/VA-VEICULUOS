@@ -1,17 +1,19 @@
 import React, { useState } from 'react';
 import { 
-  X, Lock, ShieldCheck, UserCheck, KeyRound, Eye, EyeOff, AlertCircle, ArrowRight 
+  X, Lock, KeyRound, Mail, Eye, EyeOff, AlertCircle, ArrowRight 
 } from 'lucide-react';
-import { UserRole, Salesperson, StoreProfile } from '../../types';
+import { UserRole, Salesperson, StoreProfile, SystemUser } from '../../types';
 import { BrandLogo } from './BrandLogo';
 import { auditLogger } from '../../services/auditLogger';
 import { storageService } from '../../services/storage';
+import { firebaseAuth } from '../../services/firebase';
 
 interface AuthModalProps {
   isOpen: boolean;
   onClose: () => void;
   onLoginSuccess?: (role: UserRole, salesperson?: Salesperson) => void;
   onSuccess?: (role: UserRole, salesperson?: Salesperson) => void;
+  onAuthenticatedUser?: (user: SystemUser, salesperson?: Salesperson) => void;
   salespeople: Salesperson[];
   store?: StoreProfile;
   title?: string;
@@ -25,92 +27,87 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   onClose,
   onLoginSuccess,
   onSuccess,
+  onAuthenticatedUser,
   salespeople,
   store,
   title,
   subtitle,
-  targetRole,
-  defaultRole
+  targetRole
 }) => {
-  const [selectedRole, setSelectedRole] = useState<UserRole>(targetRole || defaultRole || 'gestor');
-  const [selectedSellerId, setSelectedSellerId] = useState<string>(salespeople[0]?.id || '');
+  const [emailInput, setEmailInput] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   if (!isOpen) return null;
 
-  const handleSuccessCallback = (role: UserRole, salesperson?: Salesperson) => {
+  const handleSuccessCallback = (user: SystemUser, salesperson?: Salesperson) => {
+    if (onAuthenticatedUser) {
+      onAuthenticatedUser(user, salesperson);
+    }
     if (onLoginSuccess) {
-      onLoginSuccess(role, salesperson);
+      onLoginSuccess(user.papel, salesperson);
     } else if (onSuccess) {
-      onSuccess(role, salesperson);
+      onSuccess(user.papel, salesperson);
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
 
     const cleanPass = password.trim();
     if (!cleanPass) {
-      setErrorMsg('Informe a senha ou PIN de segurança.');
+      setErrorMsg('Informe sua senha de acesso.');
       return;
     }
 
-    const users = storageService.getUsers();
-
-    if (selectedRole === 'gestor') {
-      // Verifica se a senha confere com qualquer gestor cadastrado ou o PIN mestre 1234
-      const isGestorValid = users.some(u => 
-        u.papel === 'gestor' && u.ativo && (u.senha === cleanPass || cleanPass === '1234' || cleanPass === 'admin123')
-      ) || cleanPass === '1234' || cleanPass === 'admin123';
-
-      if (!isGestorValid) {
-        setErrorMsg('Senha ou PIN de Gestor incorreto. Utilize o PIN padrão (1234).');
-        return;
-      }
-
-      auditLogger.log({
-        acao: 'LOGIN_SISTEMA',
-        categoria: 'sistema',
-        usuarioNome: 'Gestor Geral',
-        usuarioPapel: 'gestor',
-        descricao: 'Autenticação bem-sucedida no Painel Administrativo com perfil Gestor Geral.'
-      });
-
-      handleSuccessCallback('gestor');
-      setPassword('');
-      onClose();
-    } else {
-      // Vendedor
-      const seller = salespeople.find(s => s.id === selectedSellerId) || salespeople[0];
-      const userRecord = users.find(u => u.id === seller?.id || u.email === seller?.email);
-
-      const isValidSeller = 
-        (userRecord && userRecord.senha === cleanPass) ||
-        (seller && (seller as any).senha === cleanPass) ||
-        cleanPass === '1234' || 
-        cleanPass === 'vendedor123';
-
-      if (!isValidSeller) {
-        setErrorMsg('Senha ou PIN de Vendedor incorreto. Utilize o PIN padrão (1234).');
-        return;
-      }
-
-      auditLogger.log({
-        acao: 'LOGIN_SISTEMA',
-        categoria: 'sistema',
-        usuarioNome: seller ? seller.nome : 'Vendedor',
-        usuarioPapel: 'vendedor',
-        usuarioId: seller?.id,
-        descricao: `Autenticação bem-sucedida de consultor: ${seller ? seller.nome : 'Vendedor'}.`
-      });
-
-      handleSuccessCallback('vendedor', seller);
-      setPassword('');
-      onClose();
+    const loginIdentifier = emailInput.trim();
+    if (!loginIdentifier) {
+      setErrorMsg('Informe seu e-mail corporativo para autenticação.');
+      return;
     }
+
+    setIsSubmitting(true);
+    const authResult = storageService.authenticateUser(loginIdentifier, cleanPass);
+
+    if (!authResult.success || !authResult.user) {
+      setErrorMsg(authResult.error || 'Credenciais inválidas. Verifique e-mail e senha.');
+      setIsSubmitting(false);
+      return;
+    }
+
+    if (targetRole && authResult.user.papel !== targetRole) {
+      setErrorMsg(`Permissão negada: A conta informada não possui privilégio de ${targetRole === 'gestor' ? 'Gestor Geral' : 'Vendedor'}.`);
+      setIsSubmitting(false);
+      return;
+    }
+
+    await firebaseAuth.signInStaff(authResult.user.email, cleanPass);
+
+    let matchedSeller: Salesperson | undefined;
+    if (authResult.user.papel === 'vendedor') {
+      matchedSeller =
+        salespeople.find(
+          s => s.id === authResult.user!.id || s.email.toLowerCase() === authResult.user!.email.toLowerCase()
+        ) || salespeople[0];
+    }
+
+    auditLogger.log({
+      acao: 'LOGIN_SISTEMA',
+      categoria: 'sistema',
+      usuarioNome: authResult.user.nome,
+      usuarioPapel: authResult.user.papel,
+      usuarioId: authResult.user.id,
+      descricao: `Autenticação verificada (${authResult.user.papel.toUpperCase()}): ${authResult.user.nome}.`
+    });
+
+    handleSuccessCallback(authResult.user, matchedSeller);
+    setPassword('');
+    setEmailInput('');
+    setIsSubmitting(false);
+    onClose();
   };
 
   return (
@@ -123,10 +120,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             <BrandLogo store={store} size="sm" showText={false} />
             <div>
               <h3 className="text-sm font-bold text-[#F5F5F5] font-display">
-                {title || 'Acesso Restrito à Equipe'}
+                {title || 'Autenticação de Segurança'}
               </h3>
               <p className="text-[11px] text-[#A7A7AB]">
-                {subtitle || 'Identifique-se para acessar o Painel Administrativo'}
+                {subtitle || 'Confirme suas credenciais corporativas para continuar'}
               </p>
             </div>
           </div>
@@ -148,86 +145,46 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             </div>
           )}
 
-          {/* Role selector */}
-          {!targetRole && (
-            <div>
-              <label className="block text-xs font-semibold text-[#A7A7AB] uppercase tracking-wider mb-1.5">
-                Perfil de Acesso
-              </label>
-              <div className="grid grid-cols-2 gap-2 bg-[#202024] p-1 rounded-[10px] border border-[#2D2D32]">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedRole('gestor');
-                    setErrorMsg('');
-                  }}
-                  className={`py-2 px-3 rounded-[8px] text-xs font-semibold flex items-center justify-center gap-2 transition-all cursor-pointer ${
-                    selectedRole === 'gestor'
-                      ? 'bg-[#D4130D] text-white shadow-sm font-bold'
-                      : 'text-[#A7A7AB] hover:text-[#F5F5F5]'
-                  }`}
-                >
-                  <ShieldCheck className="w-4 h-4" />
-                  <span>Gestor Geral</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedRole('vendedor');
-                    setErrorMsg('');
-                  }}
-                  className={`py-2 px-3 rounded-[8px] text-xs font-semibold flex items-center justify-center gap-2 transition-all cursor-pointer ${
-                    selectedRole === 'vendedor'
-                      ? 'bg-[#3B82F6] text-white shadow-sm font-bold'
-                      : 'text-[#A7A7AB] hover:text-[#F5F5F5]'
-                  }`}
-                >
-                  <UserCheck className="w-4 h-4" />
-                  <span>Vendedor</span>
-                </button>
-              </div>
+          {/* E-mail Corporativo */}
+          <div>
+            <label className="block text-xs font-semibold text-[#A7A7AB] uppercase tracking-wider mb-1.5">
+              E-mail Corporativo
+            </label>
+            <div className="relative">
+              <Mail className="w-4 h-4 text-[#A7A7AB] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input
+                type="email"
+                required
+                autoFocus
+                maxLength={120}
+                value={emailInput}
+                onChange={(e) => {
+                  setEmailInput(e.target.value);
+                  if (errorMsg) setErrorMsg('');
+                }}
+                placeholder="seu.email@vaveiculos.com.br"
+                className="w-full bg-[#202024] border border-[#343439] rounded-[8px] pl-9 pr-3 py-2.5 text-xs sm:text-sm text-[#F5F5F5] placeholder-[#68686E] focus:outline-none focus:border-[#D4130D] transition-colors"
+              />
             </div>
-          )}
-
-          {/* Seller picker if role is Vendedor */}
-          {selectedRole === 'vendedor' && salespeople.length > 0 && (
-            <div>
-              <label className="block text-xs font-semibold text-[#A7A7AB] uppercase tracking-wider mb-1.5">
-                Selecione seu Nome (Consultor)
-              </label>
-              <select
-                value={selectedSellerId}
-                onChange={(e) => setSelectedSellerId(e.target.value)}
-                className="w-full bg-[#202024] border border-[#343439] rounded-[8px] px-3.5 py-2.5 text-xs text-[#F5F5F5] focus:outline-none focus:border-[#3B82F6] transition-colors"
-              >
-                {salespeople.map(s => (
-                  <option key={s.id} value={s.id} disabled={s.ativo === false}>
-                    {s.nome} {s.ativo === false ? '(Desativado)' : ''}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
+          </div>
 
           {/* Campo de Senha */}
           <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <label className="block text-xs font-semibold text-[#A7A7AB] uppercase tracking-wider">
-                Senha de Acesso
-              </label>
-              <span className="text-[10px] text-[#68686E]">
-                Padrão: <code className="text-[#A7A7AB]">1234</code>
-              </span>
-            </div>
+            <label className="block text-xs font-semibold text-[#A7A7AB] uppercase tracking-wider mb-1.5">
+              Senha de Acesso
+            </label>
             <div className="relative">
               <KeyRound className="w-4 h-4 text-[#A7A7AB] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
                 type={showPassword ? 'text' : 'password'}
                 required
-                autoFocus
+                maxLength={64}
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Informe sua senha (Ex: 1234)"
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  if (errorMsg) setErrorMsg('');
+                }}
+                placeholder="Informe sua senha pessoal"
                 className="w-full bg-[#202024] border border-[#343439] rounded-[8px] pl-9 pr-10 py-2.5 text-xs sm:text-sm text-[#F5F5F5] placeholder-[#68686E] focus:outline-none focus:border-[#D4130D] transition-colors"
               />
               <button
@@ -251,10 +208,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             </button>
             <button
               type="submit"
-              className="px-5 py-2.5 rounded-[8px] bg-[#D4130D] hover:bg-[#E3271F] text-white text-xs font-bold flex items-center gap-2 shadow-sm transition-all cursor-pointer"
+              disabled={isSubmitting}
+              className="px-5 py-2.5 rounded-[8px] bg-[#D4130D] hover:bg-[#E3271F] disabled:opacity-50 text-white text-xs font-bold flex items-center gap-2 shadow-sm transition-all cursor-pointer"
             >
               <Lock className="w-3.5 h-3.5" />
-              Entrar no Sistema
+              {isSubmitting ? 'Verificando...' : 'Confirmar Acesso'}
               <ArrowRight className="w-3.5 h-3.5 ml-1" />
             </button>
           </div>

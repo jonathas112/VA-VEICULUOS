@@ -4,7 +4,7 @@ import {
   Car, ShoppingCart, ArrowDownLeft, 
   ArrowUpRight, Plus, X
 } from 'lucide-react';
-import { FormerOwner, Vehicle, Sale } from '../../types';
+import { FormerOwner, Vehicle, Sale, UserRole } from '../../types';
 import { formatCurrency, maskCPF, maskPhone, isValidCPF, isValidPhone } from '../../utils/formatters';
 import { PageHeader, KpiCard, formStyles } from '../common/DesignSystem';
 
@@ -12,6 +12,7 @@ interface OwnersViewProps {
   owners: FormerOwner[];
   vehicles: Vehicle[];
   sales: Sale[];
+  userRole?: UserRole;
   onAddOwner: (owner: FormerOwner) => void;
 }
 
@@ -19,6 +20,7 @@ export const OwnersView: React.FC<OwnersViewProps> = ({
   owners,
   vehicles,
   sales,
+  userRole = 'vendedor',
   onAddOwner
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -55,7 +57,14 @@ export const OwnersView: React.FC<OwnersViewProps> = ({
       return;
     }
 
-    if (telefone && !isValidPhone(telefone)) {
+    const cleanInputCpf = cpf.replace(/\D/g, '');
+    const duplicate = owners.find(o => o.cpf.replace(/\D/g, '') === cleanInputCpf);
+    if (duplicate) {
+      alert(`Este CPF já está cadastrado para "${duplicate.nome}".`);
+      return;
+    }
+
+    if (telefone.trim() && !isValidPhone(telefone)) {
       alert('Por favor, informe um WhatsApp válido com DDD (10 ou 11 dígitos).');
       return;
     }
@@ -145,6 +154,7 @@ export const OwnersView: React.FC<OwnersViewProps> = ({
                   <input
                     type="text"
                     required
+                    maxLength={120}
                     value={nome}
                     onChange={(e) => setNome(e.target.value)}
                     placeholder="Ex: Carlos Eduardo de Oliveira"
@@ -184,6 +194,7 @@ export const OwnersView: React.FC<OwnersViewProps> = ({
                   <input
                     type="text"
                     required
+                    maxLength={200}
                     value={endereco}
                     onChange={(e) => setEndereco(e.target.value)}
                     placeholder="Rua, Número, Bairro, Cidade - UF, CEP"
@@ -194,6 +205,7 @@ export const OwnersView: React.FC<OwnersViewProps> = ({
                 <div>
                   <label className={formStyles.label}>Observações (Opcional)</label>
                   <textarea
+                    maxLength={500}
                     value={observacoes}
                     onChange={(e) => setObservacoes(e.target.value)}
                     rows={2}
@@ -229,6 +241,7 @@ export const OwnersView: React.FC<OwnersViewProps> = ({
           <Search className="w-4 h-4 text-[#A7A7AB] absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             type="text"
+            maxLength={100}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             placeholder="Buscar por nome, CPF, telefone ou cidade..."
@@ -312,7 +325,11 @@ export const OwnersView: React.FC<OwnersViewProps> = ({
                             <ArrowDownLeft className="w-3.5 h-3.5 text-[#3B82F6]" />
                             <span className="font-semibold text-[#F5F5F5]">{v.marca} {v.modelo}</span>
                           </div>
-                          <span className="font-num font-bold text-[#CAC9CA]">{formatCurrency(v.valorPago)}</span>
+                          {userRole === 'gestor' ? (
+                            <span className="font-num font-bold text-[#CAC9CA]">{formatCurrency(v.valorPago)}</span>
+                          ) : (
+                            <span className="text-[10px] text-[#A7A7AB] font-mono italic">Restrito à Gerência</span>
+                          )}
                         </div>
                       ))}
                     </div>
