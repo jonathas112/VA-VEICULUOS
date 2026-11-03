@@ -52,12 +52,16 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     return Array.from(set).sort().reverse();
   }, [sales, currentMonthKey]);
 
-  // Filtered sales by selected period (excludes cancelled sales / distratos)
+  const completedSales = useMemo(
+    () => (sales || []).filter(s => s.statusVenda !== 'cancelada'),
+    [sales]
+  );
+
+  // Period-filtered sales for rankings and activity sections
   const filteredSales = useMemo(() => {
-    const list = (sales || []).filter(s => s.statusVenda !== 'cancelada');
-    if (selectedPeriod === 'all') return list;
-    return list.filter(s => getMonthYearKey(s.dataVenda) === selectedPeriod);
-  }, [sales, selectedPeriod]);
+    if (selectedPeriod === 'all') return completedSales;
+    return completedSales.filter(s => getMonthYearKey(s.dataVenda) === selectedPeriod);
+  }, [completedSales, selectedPeriod]);
 
   // Pre-index O(1) de veículos por ID
   const vehiclesById = useMemo(() => {
@@ -70,28 +74,23 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const inStockVehicles = useMemo(() => (vehicles || []).filter(v => v.status === 'em_estoque'), [vehicles]);
   const totalStockInvestment = useMemo(() => sumCurrency(inStockVehicles.map(v => computePreSaleTotalCost(v))), [inStockVehicles]);
 
-  const totalGrossRevenue = useMemo(
-    () => sumCurrency((sales || []).filter(s => s.statusVenda !== 'cancelada').map(s => s.valorVenda)),
-    [sales]
-  );
+  const totalGrossRevenue = useMemo(() => sumCurrency(completedSales.map(s => s.valorVenda)), [completedSales]);
 
-  const totalPeriodRevenue = useMemo(() => sumCurrency(filteredSales.map(s => s.valorVenda)), [filteredSales]);
-  
-  const totalPeriodNetProfit = useMemo(() => {
+  const totalNetProfit = useMemo(() => {
     return sumCurrency(
-      filteredSales.map(s => {
+      completedSales.map(s => {
         const v = vehiclesById.get(s.veiculoId);
         return v ? computeNetProfit(v, s) : 0;
       })
     );
-  }, [filteredSales, vehiclesById]);
+  }, [completedSales, vehiclesById]);
 
-  const rawPeriodMargin =
-    toCents(totalPeriodRevenue) > 0
-      ? (toCents(totalPeriodNetProfit) / toCents(totalPeriodRevenue)) * 100
+  const rawMargin =
+    toCents(totalGrossRevenue) > 0
+      ? (toCents(totalNetProfit) / toCents(totalGrossRevenue)) * 100
       : 0;
-  const periodMarginValue = Number.isFinite(rawPeriodMargin) ? rawPeriodMargin : 0;
-  const periodMargin = periodMarginValue.toFixed(1);
+  const marginValue = Number.isFinite(rawMargin) ? rawMargin : 0;
+  const margin = marginValue.toFixed(1);
 
   const pendingCommissions = useMemo(() => (sales || []).filter(s => s.comissaoPendente && s.statusVenda !== 'cancelada'), [sales]);
 
@@ -153,7 +152,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         <div className="flex items-center gap-2">
           <Calendar className="w-4 h-4 text-[#D4130D]" />
           <span className="text-xs font-semibold text-[#CAC9CA] uppercase tracking-wider">
-            Período de Análise:
+            Período do Ranking:
           </span>
         </div>
 
@@ -179,9 +178,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         {/* KPI 1: Vendas */}
         <KpiCard
           title="Vendas Realizadas"
-          value={filteredSales.length}
+          value={completedSales.length}
           icon={ShoppingCart}
-          subtext={selectedPeriod === 'all' ? 'Total acumulado' : 'No período selecionado'}
+          subtext="Todas as vendas concluídas"
         />
 
         {/* KPI 2: Faturamento Bruto */}
@@ -196,11 +195,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         {isGestor && (
           <KpiCard
             title="Lucro Líquido Real"
-            value={formatCurrency(totalPeriodNetProfit)}
+            value={formatCurrency(totalNetProfit)}
             icon={TrendingUp}
-            trend={totalPeriodNetProfit >= 0 ? 'up' : 'down'}
-            comparison={totalPeriodNetProfit >= 0 ? '+ Positivo' : '- Atenção'}
-            subtext="Deduz custos & comissões"
+            trend={totalNetProfit >= 0 ? 'up' : 'down'}
+            comparison={totalNetProfit >= 0 ? '+ Positivo' : '- Atenção'}
+            subtext="Histórico completo, deduz custos & comissões"
             isRedHighlight={true}
           />
         )}
@@ -209,11 +208,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         {isGestor && (
           <KpiCard
             title="Margem de Lucro"
-            value={`${periodMargin}%`}
+            value={`${margin}%`}
             icon={Percent}
-            trend={periodMarginValue >= 0 ? 'up' : 'down'}
-            comparison={periodMarginValue >= 0 ? '+ Saudável' : '- Negativa'}
-            subtext="Retorno sobre receita bruta"
+            trend={marginValue >= 0 ? 'up' : 'down'}
+            comparison={marginValue >= 0 ? '+ Saudável' : '- Negativa'}
+            subtext="Histórico completo sobre receita bruta"
           />
         )}
 
