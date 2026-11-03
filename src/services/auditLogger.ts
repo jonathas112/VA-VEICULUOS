@@ -1,9 +1,13 @@
 import { AuditLog, AuditActionType } from '../types';
 
 const AUDIT_STORAGE_KEY = 'vaveiculos_audit_logs_v1';
+let memoryAuditFallback: AuditLog[] | null = null;
 
 export const auditLogger = {
   getLogs(): AuditLog[] {
+    if (memoryAuditFallback !== null) {
+      return [...memoryAuditFallback];
+    }
     try {
       const data = localStorage.getItem(AUDIT_STORAGE_KEY);
       if (data) {
@@ -36,20 +40,39 @@ export const auditLogger = {
       detalhes: entry.detalhes
     };
 
+    const logs = this.getLogs();
+    logs.unshift(newLog);
+    const trimmed = logs.slice(0, 500);
+
     try {
-      const logs = this.getLogs();
-      logs.unshift(newLog);
-      // Mantém últimos 500 registros para alta performance
-      const trimmed = logs.slice(0, 500);
       localStorage.setItem(AUDIT_STORAGE_KEY, JSON.stringify(trimmed));
-    } catch (e) {
-      console.warn('Erro ao salvar log local:', e);
+      memoryAuditFallback = null;
+    } catch {
+      // Auto-recuperação de cota: tenta reter os 100 logs mais recentes; se ainda sem cota, mantém em memória
+      try {
+        const emergencyTrimmed = trimmed.slice(0, 100);
+        localStorage.setItem(AUDIT_STORAGE_KEY, JSON.stringify(emergencyTrimmed));
+        memoryAuditFallback = null;
+      } catch (e2) {
+        try {
+          localStorage.removeItem(AUDIT_STORAGE_KEY);
+        } catch {
+          // Ignora falha se storage estiver completamente bloqueado
+        }
+        memoryAuditFallback = trimmed;
+        console.warn('Cota do navegador atingida para logs locais; fallback em memória ativado:', e2);
+      }
     }
 
     return newLog;
   },
 
   clearLogs(): void {
-    localStorage.removeItem(AUDIT_STORAGE_KEY);
+    memoryAuditFallback = null;
+    try {
+      localStorage.removeItem(AUDIT_STORAGE_KEY);
+    } catch {
+      // Ignora caso localStorage esteja indisponível
+    }
   }
 };
